@@ -737,9 +737,9 @@ This Sunstone Circuits 2 Layer .DRU has been set to cover our minimum requiremen
 <attribute name="NAME" x="1.27" y="-8.382" size="0.8128" layer="25" font="vector" ratio="12" rot="R90" align="center-left"/>
 <attribute name="VALUE" x="-0.127" y="-9.144" size="1.016" layer="27" font="vector" ratio="12" rot="R270" align="bottom-center"/>
 </element>
-<element name="A1" library="chips" package="FRACTUS-ANTENNA-FR05-S1-N-0-102" value="FRACTUS-2.4GHZ-FR05-S1-N-0-102" x="-4.3434" y="6.985" smashed="yes" rot="R90">
-<attribute name="RICHARDSON_RFPD" value="FR05-S1-N-0102B" x="46.7106" y="-14.605" size="1.778" layer="27" rot="R90" display="off"/>
-<attribute name="NAME" x="-6.1434" y="5.969" size="0.8128" layer="25" font="vector" ratio="12" rot="R90" align="bottom-center"/>
+<element name="A1" library="chips" package="FRACTUS-ANTENNA-FR05-S1-N-0-102" value="FRACTUS-2.4GHZ-FR05-S1-N-0-102" x="-4.3434" y="6.35" smashed="yes" rot="R90">
+<attribute name="RICHARDSON_RFPD" value="FR05-S1-N-0102B" x="46.7106" y="-15.24" size="1.778" layer="27" rot="R90" display="off"/>
+<attribute name="NAME" x="-6.1434" y="5.334" size="0.8128" layer="25" font="vector" ratio="12" rot="R90" align="bottom-center"/>
 </element>
 <element name="L2" library="passives" package="0603_CAP" value="10uH" x="4.191" y="-7.493" smashed="yes" rot="R270">
 <attribute name="DIGIKEY" value="490-4025-1-ND" x="-27.431996875" y="10.794996875" size="1.778" layer="27" rot="R270" display="off"/>
@@ -1061,7 +1061,7 @@ This Sunstone Circuits 2 Layer .DRU has been set to cover our minimum requiremen
 <contactref element="B1" pad="SE"/>
 <contactref element="A1" pad="1"/>
 <contactref element="C1" pad="1"/>
-<wire x1="-4.3434" y1="4.435" x2="-4.3434" y2="0" width="2.0066" layer="1"/>
+<wire x1="-4.3434" y1="3.8" x2="-4.3434" y2="0" width="2.0066" layer="1"/>
 <wire x1="-4.3434" y1="-1.241" x2="-4.3434" y2="-0.30353125" width="0.4064" layer="1"/>
 <wire x1="-4.3434" y1="-0.30353125" x2="-4.3434" y2="0" width="0.4064" layer="1"/>
 <wire x1="-5.02793125" y1="0.381" x2="-4.3434" y2="-0.30353125" width="0.4064" layer="1"/>
