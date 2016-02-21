@@ -12,6 +12,7 @@
 #include "led.h"
 #include "nrf_drv_spi.h"
 #include "app_gpiote.h"
+ #include "app_timer.h"
 
 #include "board.h"
 #include "adxl362.h"
@@ -20,6 +21,12 @@
 #include "simple_adv.h"
 
 
+
+#define DEVICE_NAME "SHOES!"
+
+#define SHOES_SERVICE 0x14
+#define UMICH_COMPANY_IDENTIFIER 0x02E0
+
 #define LED0 13
 #define LED1 25
 
@@ -27,11 +34,21 @@
 static simple_ble_config_t ble_config = {
     .platform_id       = 0xda,              // used as 4th octect in device BLE address
     .device_id         = DEVICE_ID_DEFAULT,
-    .adv_name          = "SHOES!",
-    .adv_interval      = MSEC_TO_UNITS(500, UNIT_0_625_MS),
+    .adv_name          = DEVICE_NAME,
+    .adv_interval      = MSEC_TO_UNITS(80, UNIT_0_625_MS),
     .min_conn_interval = MSEC_TO_UNITS(500, UNIT_1_25_MS),
     .max_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS)
 };
+
+typedef struct {
+    uint8_t*  p_data;
+    uint16_t  data_len;
+} data_t;
+
+typedef struct {
+    uint8_t seq;
+    uint8_t action;
+} __attribute__((packed)) shoe_pkt_t;
 
 
 #define ACCELEROMETER_INTERRUPT_PIN 5
@@ -40,25 +57,114 @@ static nrf_drv_spi_t _spi = NRF_DRV_SPI_INSTANCE(SPI_INSTANCE);
 
 app_gpiote_user_id_t gpiote_user_acc;
 
+APP_TIMER_DEF(app_timer);
+
+
+static uint8_t mdata[1+sizeof(shoe_pkt_t)] = {SHOES_SERVICE};
+
+
+static shoe_pkt_t me = {0, 0xb6};
+
+// Last seq number we got from a shoe
+static uint8_t last_seq_number = 255;
+
+
+void adv_init (shoe_pkt_t* shoe);
+
+
+// Get field from advertisement
+static uint32_t adv_report_parse(uint8_t type, data_t * p_advdata, data_t * p_typedata) {
+    uint32_t  index = 0;
+    uint8_t * p_data;
+
+    p_data = p_advdata->p_data;
+
+    while (index < p_advdata->data_len)
+    {
+        uint8_t field_length = p_data[index];
+        uint8_t field_type   = p_data[index+1];
+
+        if (field_type == type)
+        {
+            p_typedata->p_data   = &p_data[index+2];
+            p_typedata->data_len = field_length-1;
+            return NRF_SUCCESS;
+        }
+        index += field_length + 1;
+    }
+    return NRF_ERROR_NOT_FOUND;
+}
+
 
 void ble_error(uint32_t error_code) {
     led_on(LED0);
 }
 
+
+
 void ble_evt_adv_report (ble_evt_t* p_ble_evt) {
+    uint32_t err;
 
+    // Setup some pointers and data structures. Wow can this get verbose.
     ble_gap_evt_adv_report_t* adv = &p_ble_evt->evt.gap_evt.params.adv_report;
+    data_t adv_data;
+    adv_data.p_data = adv->data;
+    adv_data.data_len = adv->dlen;
 
 
-    if (adv->rssi > -60) {
+    // Look for name
+    data_t device_name;
+    err = adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, &adv_data, &device_name);
+    if (err != NRF_SUCCESS) {
+        // This is definitely not a packet we are looking for
+        return;
+    }
+    // Make sure its the correct name
+    if (strncmp((char*) device_name.p_data, DEVICE_NAME, device_name.data_len) != 0) return;
+
+    // Look for manufacturer data
+    data_t manuf_data;
+    err = adv_report_parse(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, &adv_data, &manuf_data);
+    if (err != NRF_SUCCESS) return;
+
+    // Length of manufacturer data should be:
+    //  company id (2) + service (1) + sizeof(shoe_pkt_t)
+    if (manuf_data.data_len != 3+sizeof(shoe_pkt_t)) return;
+
+    // This should be our manufacturer ID and service
+    uint16_t manufacturer = manuf_data.p_data[0] | (((uint16_t) manuf_data.p_data[1]) << 8);
+    uint8_t service = manuf_data.p_data[2];
+    if (manufacturer != UMICH_COMPANY_IDENTIFIER || service != SHOES_SERVICE) return;
+
+    // At this point we can be pretty sure we have the correct packet
+    shoe_pkt_t* shoe = (shoe_pkt_t*) (manuf_data.p_data+3);
+
+    if (shoe->seq != last_seq_number) {
+        last_seq_number = shoe->seq;
         led_toggle(LED1);
     }
+
+
+
+
+    // adv->rssi
+
+}
+
+
+static void app_timer_handler (void* p_context) {
+    advertising_stop();
 }
 
 static void acc_interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
-        led_toggle(LED0);
+        // led_toggle(LED0);
+
+        me.seq++;
+        adv_init(&me);
+        advertising_start();
+        app_timer_start(app_timer, APP_TIMER_TICKS(4000, 0), NULL);
     }
 }
 
@@ -110,9 +216,62 @@ void accelerometer_init () {
     app_gpiote_user_enable(gpiote_user_acc);
 }
 
+void adv_init (shoe_pkt_t* shoe) {
+    uint32_t      err_code;
+    ble_advdata_t advdata;
+
+    // Build and set advertising data
+    memset(&advdata, 0, sizeof(advdata));
+
+    // Common
+    advdata.include_appearance = false;
+    advdata.flags              = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+
+    // Put name in main packet or in the scan response
+    advdata.name_type = BLE_ADVDATA_FULL_NAME;
+
+    // Handle manufacturer data
+    ble_advdata_manuf_data_t mandata;
+    mandata.company_identifier = UMICH_COMPANY_IDENTIFIER;
+    mandata.data.p_data = mdata;
+    mandata.data.size   = 1 + sizeof(shoe_pkt_t);
+    memcpy(mdata+1, shoe, sizeof(shoe_pkt_t));
+    advdata.p_manuf_specific_data = &mandata;
+
+    err_code = ble_advdata_set(&advdata, NULL);
+    APP_ERROR_CHECK(err_code);
+
+    // // Start the advertisement
+    // advertising_start();
+}
+
+
+static const ble_gap_scan_params_t m_scan_param = {
+    .active = 0,                   // Active scanning not set.
+    .selective = 0,                // Selective scanning not set.
+    .p_whitelist = NULL,           // No whitelist provided.
+    .interval = 0x00A0,
+    .window = 0x00A0,
+    .timeout = 0x0000              // No timeout.
+};
+
+static void scan_start () {
+    ret_code_t err_code;
+
+    err_code = sd_ble_gap_scan_stop();
+
+    err_code = sd_ble_gap_scan_start(&m_scan_param);
+    // It is okay to ignore this error since we are stopping the scan anyway.
+    if (err_code != NRF_ERROR_INVALID_STATE) {
+        APP_ERROR_CHECK(err_code);
+    }
+}
+
 
 
 int main(void) {
+    uint32_t err_code;
+
     led_init(LED0);
     led_off(LED0);
     led_init(LED1);
@@ -121,13 +280,23 @@ int main(void) {
     // Setup BLE
     simple_ble_init(&ble_config);
 
+    // init timers in case we need to
+    APP_TIMER_INIT(0, 4, false);
+    err_code = app_timer_create(&app_timer, APP_TIMER_MODE_SINGLE_SHOT, app_timer_handler);
+    APP_ERROR_CHECK(err_code);
+
+
+
     // Advertise because why not
-    simple_adv_only_name();
+    // simple_adv_only_name();
+
 
     // And scan at the same time
-    simple_ble_scan_start();
+    scan_start();
 
     accelerometer_init();
+
+
 
     while (1) {
         power_manage();
