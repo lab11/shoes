@@ -280,6 +280,9 @@ int main(void) {
     // Setup BLE
     simple_ble_init(&ble_config);
 
+    // nrf_power_dcdc_mode_t = NRF_POWER_DCDC_ENABLE;
+    sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+
     // init timers in case we need to
     APP_TIMER_INIT(0, 4, false);
     err_code = app_timer_create(&app_timer, APP_TIMER_MODE_SINGLE_SHOT, app_timer_handler);
