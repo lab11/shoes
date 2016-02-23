@@ -5,15 +5,39 @@
 </head>
 
 <body>
-  <canvas id="c" width="800" height="800"></canvas>
+  <canvas id="c" width="2500" height="1600"></canvas>
 
 <script>
 
 var shoes = [];
-var shoerr;
 
 
-function create_shoe (x, y) {
+var MAX_TX_DISTANCE = 101;
+
+function rssi_from_distance (distance) {
+  return (-80/MAX_TX_DISTANCE) * distance;
+}
+
+function delay_from_rssi (rssi) {
+  return ((99/80) * rssi) + 100;
+}
+
+function getRandomInt(min, max) {
+  return Math.floor(Math.random() * (max - min)) + min;
+}
+
+
+function guid() {
+  function s4() {
+    return Math.floor((1 + Math.random()) * 0x10000)
+      .toString(16)
+      .substring(1);
+  }
+  return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+    s4() + '-' + s4() + s4() + s4();
+}
+
+function create_shoe (x, y, i) {
   var shoe = new fabric.Circle({
     radius: 15,
     fill: 'white',
@@ -22,6 +46,56 @@ function create_shoe (x, y) {
     top: y,
     selectable: false
   });
+
+  shoe.index = i;
+  shoe.uuid = guid();
+  shoe.last_heard = {uuid: '',
+                     packet_id: -1,
+                     color: 'white'};
+
+  shoe.recv_packet = function (initiator_uuid, packet_id, hop, color, rssi) {
+    if (this.last_heard.uuid != initiator_uuid || this.last_heard.packet_id != packet_id) {
+      // got a new packet
+
+      // Save so we know we have already started this flood
+      this.last_heard.uuid = initiator_uuid;
+      this.last_heard.packet_id = packet_id;
+      this.last_heard.color = color;
+
+      // Update our own state
+      this.fill = color;
+      // canvas.renderAll();
+
+      // Change back after some point
+      clearTimeout(this.timeout);
+      function go_back () {
+        this.fill = 'white';
+        // canvas.renderAll();
+      };
+      this.timeout = setTimeout(go_back.bind(this), 5000);
+
+      console.log('got packet: ' + this.index + '  rssi: ' + rssi + '  rs: ' + delay_from_rssi(rssi));
+
+      if (hop <100){
+        // Now re-transmit packet based on RSSI
+        function send_flood_packet () {
+          send_packet(this, initiator_uuid, packet_id, hop+1, color);
+        }
+        setTimeout(send_flood_packet.bind(this), delay_from_rssi(rssi));
+        // setTimeout(send_flood_packet.bind(this), 1);
+      }
+    }
+  }
+
+  var num = new fabric.Text(i+'', {
+    left: x,
+    top: y,
+    fontSize: 20,
+    selectable: false,
+  });
+  canvas.add(num);
+  canvas.moveTo(num, 10)
+
   return shoe;
 }
 
@@ -30,41 +104,109 @@ function draw_shoes_grid (canvas) {
   var ypad = 50;
   var xspace = 50;
   var yspace = 50;
+  var x = 20;
+  var y = 20;
+
+  for (var i=0; i<x; i++) {
+    for (var j=0; j<y; j++) {
+      var new_x = xpad + (i*xspace) + getRandomInt(-10, 10);
+      var new_y = ypad + (j*yspace) + getRandomInt(-10, 10);
+      var shoe = create_shoe(new_x, new_y, j + (i*x));
+      canvas.add(shoe);
+      canvas.moveTo(shoe, 0)
+      shoes.push(shoe);
+    }
+  }
+}
+
+function draw_shoes_line (canvas) {
+  var xpad = 50;
+  var ypad = 50;
+  var xspace = 75;
+  var yspace = 50;
   var x = 10;
   var y = 10;
 
   for (var i=0; i<x; i++) {
-    for (var j=0; j<y; j++) {
-      var new_x = xpad + (i*xspace);
-      var new_y = ypad + (j*yspace);
-      var shoe = create_shoe(new_x, new_y);
+    var j=0;
+    // for (var j=0; j<y; j++) {
+      var new_x = xpad + (i*xspace) + getRandomInt(-10, 10);
+      var new_y = ypad + (j*yspace) + getRandomInt(-10, 10);
+      var shoe = create_shoe(new_x, new_y, j + (i*10));
       canvas.add(shoe);
+      canvas.moveTo(shoe, 0)
       shoes.push(shoe);
-      shoerr=shoe;
-    }
+    // }
   }
 }
 
 function draw_shoes (canvas) {
   draw_shoes_grid(canvas);
-
+  // draw_shoes_line(canvas);
+  canvas.renderAll();
 }
 
-var canvas = new fabric.Canvas('c');
+function calculate_distance (s1, s2) {
+  var l1 = s1.left;
+  var l2 = s2.left;
+  var t1 = s1.top;
+  var t2 = s2.top;
+  return Math.sqrt(((l1-l2)*(l1-l2)) + ((t1-t2)*(t1-t2)));
+}
+
+
+function send_packet (origin, initiator_uuid, packet_id, hop, color) {
+  for (var i=0; i<shoes.length; i++) {
+    var other_shoe = shoes[i];
+    if (origin.uuid != other_shoe.uuid) {
+      var distance = calculate_distance(origin, other_shoe);
+      if (distance < MAX_TX_DISTANCE) {
+        other_shoe.recv_packet(initiator_uuid, packet_id, hop, color, rssi_from_distance(distance));
+      }
+    }
+  }
+  // canvas.renderAll();
+}
+
+
+
+function start_flood (shoe) {
+  var packet_id = getRandomInt(0, 100);
+  shoe.set({fill: 'blue'});
+  shoe.last_heard = {uuid: shoe.uuid,
+                     packet_id: packet_id,
+                     color: 'white'};
+
+  // Iterate all other shoes
+  send_packet(shoe, shoe.uuid, packet_id, 0, '#87CEFA');
+}
+
+var canvas = new fabric.Canvas('c', {renderOnAddRemove: false});
 draw_shoes(canvas);
 
 
 
-console.log(shoes)
 
 
+canvas.on('mouse:down', function (options) {
+  if (options.target) {
+    // Only call this if a shoe was clicked
+    start_flood(options.target);
+  }
+});
 
-setTimeout(function () {
-  console.log(shoes[19])
-  shoes[19].set({fill:'blue'});
-  shoerr.set({fill:'blue'});
+
+setInterval(function () {
   canvas.renderAll();
-}, 1000);
+}, 25);
+
+
+// setTimeout(function () {
+//   console.log(shoes[19])
+//   shoes[19].set({fill:'blue'});
+//   shoerr.set({fill:'blue'});
+//   canvas.renderAll();
+// }, 1000);
 
 </script
 </body>
