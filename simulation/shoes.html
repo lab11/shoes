@@ -1,0 +1,67 @@
+<html>
+<head>
+  <title>Shoes!</title>
+</head>
+
+<body>
+  <canvas id="canvas" width="800" height="800"></canvas>
+
+<script>
+
+var shoes = [];
+
+
+function draw_shoe (canvas, x, y) {
+  var radius = 15;
+
+  var context = canvas.getContext('2d');
+  context.beginPath();
+  context.arc(x, y, radius, 0, 2 * Math.PI, false);
+  context.fillStyle = 'white';
+  context.fill();
+  context.lineWidth = 1;
+  context.strokeStyle = '#000000';
+  context.stroke();
+
+  return context;
+}
+
+function draw_shoes_grid (canvas) {
+  var xpad = 50;
+  var ypad = 50;
+  var xspace = 50;
+  var yspace = 50;
+  var x = 10;
+  var y = 10;
+
+  for (var i=0; i<x; i++) {
+    for (var j=0; j<y; j++) {
+      var new_x = xpad + (i*xspace);
+      var new_y = ypad + (j*yspace);
+      var shoe = draw_shoe(canvas, new_x, new_y);
+      shoes.push(shoe);
+    }
+  }
+}
+
+function draw_shoes (canvas) {
+  draw_shoes_grid(canvas);
+
+}
+
+
+
+var _canvas = document.getElementById('canvas');
+draw_shoes(_canvas);
+
+
+
+
+setTimeout(function () {
+  shoes[19].fillStyle='blue';
+  shoes[19].fill();
+}, 5000);
+
+</script
+</body>
+</html>
