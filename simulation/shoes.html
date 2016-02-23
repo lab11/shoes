@@ -1,29 +1,28 @@
 <html>
 <head>
   <title>Shoes!</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/1.5.0/fabric.min.js"></script>
 </head>
 
 <body>
-  <canvas id="canvas" width="800" height="800"></canvas>
+  <canvas id="c" width="800" height="800"></canvas>
 
 <script>
 
 var shoes = [];
+var shoerr;
 
 
-function draw_shoe (canvas, x, y) {
-  var radius = 15;
-
-  var context = canvas.getContext('2d');
-  context.beginPath();
-  context.arc(x, y, radius, 0, 2 * Math.PI, false);
-  context.fillStyle = 'white';
-  context.fill();
-  context.lineWidth = 1;
-  context.strokeStyle = '#000000';
-  context.stroke();
-
-  return context;
+function create_shoe (x, y) {
+  var shoe = new fabric.Circle({
+    radius: 15,
+    fill: 'white',
+    stroke: 'black',
+    left: x,
+    top: y,
+    selectable: false
+  });
+  return shoe;
 }
 
 function draw_shoes_grid (canvas) {
@@ -38,8 +37,10 @@ function draw_shoes_grid (canvas) {
     for (var j=0; j<y; j++) {
       var new_x = xpad + (i*xspace);
       var new_y = ypad + (j*yspace);
-      var shoe = draw_shoe(canvas, new_x, new_y);
+      var shoe = create_shoe(new_x, new_y);
+      canvas.add(shoe);
       shoes.push(shoe);
+      shoerr=shoe;
     }
   }
 }
@@ -49,18 +50,21 @@ function draw_shoes (canvas) {
 
 }
 
+var canvas = new fabric.Canvas('c');
+draw_shoes(canvas);
 
 
-var _canvas = document.getElementById('canvas');
-draw_shoes(_canvas);
 
+console.log(shoes)
 
 
 
 setTimeout(function () {
-  shoes[19].fillStyle='blue';
-  shoes[19].fill();
-}, 5000);
+  console.log(shoes[19])
+  shoes[19].set({fill:'blue'});
+  shoerr.set({fill:'blue'});
+  canvas.renderAll();
+}, 1000);
 
 </script
 </body>
