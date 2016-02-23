@@ -35,7 +35,7 @@ static simple_ble_config_t ble_config = {
     .platform_id       = 0xda,              // used as 4th octect in device BLE address
     .device_id         = DEVICE_ID_DEFAULT,
     .adv_name          = DEVICE_NAME,
-    .adv_interval      = MSEC_TO_UNITS(80, UNIT_0_625_MS),
+    .adv_interval      = MSEC_TO_UNITS(10000, UNIT_0_625_MS), // NOT ACTUALLY USED. WE OVERRIDE SIMPLEBLE FUNCTIONS
     .min_conn_interval = MSEC_TO_UNITS(500, UNIT_1_25_MS),
     .max_conn_interval = MSEC_TO_UNITS(1000, UNIT_1_25_MS)
 };
@@ -245,14 +245,38 @@ void adv_init (shoe_pkt_t* shoe) {
     // advertising_start();
 }
 
+// Copied to allow me to set the advertising channels used
+ble_gap_adv_params_t m_adv_params;
+void advertising_init(void) {
+    memset(&m_adv_params, 0, sizeof(m_adv_params));
+    m_adv_params.type        = BLE_GAP_ADV_TYPE_ADV_IND;
+    m_adv_params.p_peer_addr = NULL;
+    m_adv_params.fp          = BLE_GAP_ADV_FP_ANY;
+    m_adv_params.interval    = MSEC_TO_UNITS(10000, UNIT_0_625_MS);
+    m_adv_params.timeout     = APP_ADV_TIMEOUT_IN_SECONDS;
+
+    // Only use channel 39
+    m_adv_params.channel_mask.ch_37_off = 1;
+    m_adv_params.channel_mask.ch_38_off = 1;
+    m_adv_params.channel_mask.ch_39_off = 0;
+}
+
+void advertising_start () {
+    uint32_t err_code = sd_ble_gap_adv_start(&m_adv_params);
+    if (err_code != NRF_ERROR_INVALID_STATE) {
+        // ignore Invalid State responses. Occurs when start is called twice
+        APP_ERROR_CHECK(err_code);
+    }
+}
+
 
 static const ble_gap_scan_params_t m_scan_param = {
-    .active = 0,                   // Active scanning not set.
-    .selective = 0,                // Selective scanning not set.
+    .active      = 0,              // Active scanning not set.
+    .selective   = 0,              // Selective scanning not set.
     .p_whitelist = NULL,           // No whitelist provided.
-    .interval = 0x00A0,
-    .window = 0x00A0,
-    .timeout = 0x0000              // No timeout.
+    .interval    = 0x00A0,
+    .window      = 0x00A0,
+    .timeout     = 0x0000          // No timeout.
 };
 
 static void scan_start () {
