@@ -93,7 +93,7 @@ nrf_radio_signal_callback_return_param_t *radio_cb (uint8_t sig)
       NRF_TIMER0->INTENSET = TIMER_INTENSET_COMPARE0_Msk;
       NRF_TIMER0->CC[0] = m_timeslot_req_normal.params.normal.length_us - 1000;
 
-      ll_scan_start ();
+      ll_scan_start();
 	    m_signal_callback_return_param.callback_action = NRF_RADIO_SIGNAL_CALLBACK_ACTION_NONE;
       break;
 
@@ -144,9 +144,8 @@ btle_status_codes_t btle_scan_init (IRQn_Type irq)
 
   // nrf_report_disp_init (irq);
 
-  err_code = sd_radio_session_open (radio_cb);
-  if (err_code != NRF_SUCCESS)
-  {
+  err_code = sd_radio_session_open(radio_cb);
+  if (err_code != NRF_SUCCESS) {
     status = BTLE_STATUS_CODE_COMMAND_DISALLOWED;
   }
 
@@ -187,7 +186,7 @@ btle_status_codes_t btle_scan_enable_set (btle_cmd_param_le_write_scan_enable_t 
   switch (param.scan_enable)
   {
     case BTLE_SCAN_MODE_ENABLE:
-      err_code = sd_radio_request (&m_timeslot_req_earliest);
+      err_code = sd_radio_request(&m_timeslot_req_earliest);
       if (err_code != NRF_SUCCESS)
       {
         status = BTLE_STATUS_CODE_COMMAND_DISALLOWED;

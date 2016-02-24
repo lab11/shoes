@@ -42,6 +42,8 @@
 #include <stdint.h>
 #include <string.h>
 
+ #include "nrf_delay.h"
+
 /*****************************************************************************
 * Local definitions
 *****************************************************************************/
@@ -49,8 +51,8 @@
 /**@brief Defining GPIO pins used for looking at timing.
  */
 
-#define DBG_RADIO_END                        0
-#define DBG_RADIO_READY                      1
+#define DBG_RADIO_END                        24
+#define DBG_RADIO_READY                      23
 #define DBG_RADIO_TIMER                      2
 
 /**@brief Advertisement report indexes
@@ -252,6 +254,12 @@ static void m_state_idle_exit (void)
 
 static void m_state_receive_adv_entry (void)
 {
+
+
+  radio_disable();
+
+
+
   memset ((void *) m_rx_buf, '\0', RX_BUF_SIZE);
   radio_buffer_configure (&m_rx_buf[0]);
   radio_rx_prepare (true);
@@ -307,117 +315,135 @@ static void m_state_receive_scan_rsp_exit (void)
 
 void ll_scan_rx_cb (bool crc_valid)
 {
+
+  // led_toggle(25);
+
   /* Received invalid packet */
   if (!crc_valid)
   {
-    switch(m_scanner.state)
-    {
-      case SCANNER_STATE_RECEIVE_ADV:
-        m_packets_invalid++;
+    // switch(m_scanner.state)
+    // {
+    //   case SCANNER_STATE_RECEIVE_ADV:
+    //     m_packets_invalid++;
 
-        m_state_receive_adv_exit ();
-        radio_disable ();
-        m_state_receive_adv_entry ();
-        break;
+    //     m_state_receive_adv_exit ();
+    //     radio_disable ();
+    //     m_state_receive_adv_entry ();
+    //     break;
 
-      case SCANNER_STATE_RECEIVE_SCAN_RSP:
-        m_packets_invalid++;
+    //   case SCANNER_STATE_RECEIVE_SCAN_RSP:
+    //     m_packets_invalid++;
 
-        m_state_receive_scan_rsp_exit ();
-        radio_disable ();
-        m_state_receive_adv_entry ();
-        break;
+    //     m_state_receive_scan_rsp_exit ();
+    //     radio_disable ();
+    //     m_state_receive_adv_entry ();
+    //     break;
 
-      default:
-        break;
-    }
+    //   default:
+    //     break;
+    // }
   }
 
-  switch (m_scanner.state)
-  {
-    /* Packet received */
-    case SCANNER_STATE_RECEIVE_ADV:
-      m_packets_valid++;
+  // led_on(25);
+  // while (1) {
+    // led_toggle(25);
+    // nrf_delay_us(100);
+  // }
+  // led_off(25);
 
-      switch (m_rx_buf[0] & 0x0F)
-      {
-        /* If active scanning is enabled, these packets should be reponded to with
-         * a SCAN_REQ, and we should wait for a SCAN_RSP.
-         */
-        case PACKET_TYPE_ADV_IND:
-          m_state_receive_adv_exit ();
 
-          m_adv_report_generate (m_rx_buf);
 
-          /* If we're doing active scanning, prepare to send SCAN REQ, otherwise
-           * loop back around to receive a new advertisement.
-           */
-          if (m_scanner.params.scan_type == BTLE_SCAN_TYPE_ACTIVE)
-          {
-            m_state_send_scan_req_entry ();
-          }
-          else
-          {
-            m_state_receive_adv_entry ();
-          }
-          break;
-        case PACKET_TYPE_ADV_SCAN_IND:
-          m_state_receive_adv_exit ();
-          m_adv_report_generate (m_rx_buf);
+    // m_state_receive_adv_exit ();
+    // radio_disable();
+    m_state_receive_adv_entry ();
 
-          /* If we're doing active scanning, prepare to send SCAN REQ, otherwise
-           * loop back around to receive a new advertisement.
-           */
-          if (m_scanner.params.scan_type == BTLE_SCAN_TYPE_ACTIVE)
-          {
-            m_state_send_scan_req_entry ();
-          }
-          else
-          {
-            m_state_receive_adv_entry ();
-          }
-          break;
 
-        /* These packets do not require response.
-         */
-        case PACKET_TYPE_ADV_DIRECT_IND:
-          m_state_receive_adv_exit ();
-          radio_disable();
-          m_adv_report_generate (m_rx_buf);
-          m_state_receive_adv_entry ();
-          break;
+  // switch (m_scanner.state)
+  // {
+  //   /* Packet received */
+  //   case SCANNER_STATE_RECEIVE_ADV:
+  //     m_packets_valid++;
 
-        case PACKET_TYPE_ADV_NONCONN_IND:
-          m_state_receive_adv_exit ();
-          radio_disable();
-          m_adv_report_generate (m_rx_buf);
-          m_state_receive_adv_entry ();
-          break;
+  //     switch (m_rx_buf[0] & 0x0F)
+  //     {
+  //       /* If active scanning is enabled, these packets should be reponded to with
+  //        * a SCAN_REQ, and we should wait for a SCAN_RSP.
+  //        */
+  //       case PACKET_TYPE_ADV_IND:
+  //         m_state_receive_adv_exit ();
 
-        /* This should not have happened */
-        default:
-          m_state_receive_adv_exit ();
-          radio_disable();
-          m_state_receive_adv_entry();
-      }
-      break;
+  //         m_adv_report_generate (m_rx_buf);
 
-    case SCANNER_STATE_RECEIVE_SCAN_RSP:
-      m_packets_valid++;
+  //         /* If we're doing active scanning, prepare to send SCAN REQ, otherwise
+  //          * loop back around to receive a new advertisement.
+  //          */
+  //         if (m_scanner.params.scan_type == BTLE_SCAN_TYPE_ACTIVE)
+  //         {
+  //           m_state_send_scan_req_entry ();
+  //         }
+  //         else
+  //         {
+  //           m_state_receive_adv_entry ();
+  //         }
+  //         break;
+  //       case PACKET_TYPE_ADV_SCAN_IND:
+  //         m_state_receive_adv_exit ();
+  //         m_adv_report_generate (m_rx_buf);
 
-      m_state_receive_scan_rsp_exit ();
-      m_adv_report_generate (m_rx_buf);
+  //         /* If we're doing active scanning, prepare to send SCAN REQ, otherwise
+  //          * loop back around to receive a new advertisement.
+  //          */
+  //         if (m_scanner.params.scan_type == BTLE_SCAN_TYPE_ACTIVE)
+  //         {
+  //           m_state_send_scan_req_entry ();
+  //         }
+  //         else
+  //         {
+  //           m_state_receive_adv_entry ();
+  //         }
+  //         break;
 
-      m_state_receive_adv_entry ();
-      break;
+  //       /* These packets do not require response.
+  //        */
+  //       case PACKET_TYPE_ADV_DIRECT_IND:
+  //         m_state_receive_adv_exit ();
+  //         radio_disable();
+  //         m_adv_report_generate (m_rx_buf);
+  //         m_state_receive_adv_entry ();
+  //         break;
 
-    default:
-      break;
-  }
+  //       case PACKET_TYPE_ADV_NONCONN_IND:
+  //         m_state_receive_adv_exit ();
+  //         radio_disable();
+  //         m_adv_report_generate (m_rx_buf);
+  //         m_state_receive_adv_entry ();
+  //         break;
+
+  //       /* This should not have happened */
+  //       default:
+  //         m_state_receive_adv_exit ();
+  //         radio_disable();
+  //         m_state_receive_adv_entry();
+  //     }
+  //     break;
+
+  //   case SCANNER_STATE_RECEIVE_SCAN_RSP:
+  //     m_packets_valid++;
+
+  //     m_state_receive_scan_rsp_exit ();
+  //     m_adv_report_generate (m_rx_buf);
+
+  //     m_state_receive_adv_entry ();
+  //     break;
+
+  //   default:
+  //     break;
+  // }
 }
 
 void ll_scan_tx_cb (void)
 {
+    // led_toggle(25);
     switch (m_scanner.state)
   {
     /* SCAN_REQ has been transmitted, and we must configure the radio to
@@ -435,17 +461,17 @@ void ll_scan_tx_cb (void)
 
 void ll_scan_timeout_cb (void)
 {
-  switch (m_scanner.state)
-  {
-    case SCANNER_STATE_RECEIVE_SCAN_RSP:
-      m_state_receive_scan_rsp_exit ();
-      radio_disable ();
+  // switch (m_scanner.state)
+  // {
+  //   case SCANNER_STATE_RECEIVE_SCAN_RSP:
+  //     m_state_receive_scan_rsp_exit ();
+  //     radio_disable ();
       m_state_receive_adv_entry ();
-      break;
+  //     break;
 
-    default:
-      break;
-  }
+  //   default:
+  //     break;
+  // }
 }
 
 btle_status_codes_t ll_scan_init (void)
@@ -497,44 +523,44 @@ btle_status_codes_t ll_scan_config (btle_scan_types_t scan_type, btle_address_ty
 
 btle_status_codes_t ll_scan_start (void)
 {
-  /* Toggle pin when radio reaches END (RX or TX) */
-  NRF_GPIOTE->CONFIG[DBG_RADIO_END] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
-                          GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
-                          DBG_RADIO_END << GPIOTE_CONFIG_PSEL_Pos |
-                          GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos;
+  // /* Toggle pin when radio reaches END (RX or TX) */
+  // NRF_GPIOTE->CONFIG[DBG_RADIO_END] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
+  //                         GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
+  //                         DBG_RADIO_END << GPIOTE_CONFIG_PSEL_Pos |
+  //                         GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos;
 
-  NRF_PPI->CH[DBG_RADIO_END].EEP = (uint32_t) (&NRF_RADIO->EVENTS_END);
-  NRF_PPI->CH[DBG_RADIO_END].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_END]);
-  NRF_PPI->CHENSET = (1 << DBG_RADIO_END);
+  // NRF_PPI->CH[DBG_RADIO_END].EEP = (uint32_t) (&NRF_RADIO->EVENTS_END);
+  // NRF_PPI->CH[DBG_RADIO_END].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_END]);
+  // NRF_PPI->CHENSET = (1 << DBG_RADIO_END);
 
-  /* Toggle pin when radio reaches READY (RX or TX) */
-  NRF_GPIOTE->CONFIG[DBG_RADIO_READY] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
-                          GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
-                          DBG_RADIO_READY << GPIOTE_CONFIG_PSEL_Pos |
-                          GPIOTE_CONFIG_OUTINIT_High << GPIOTE_CONFIG_OUTINIT_Pos;
+  // /* Toggle pin when radio reaches READY (RX or TX) */
+  // NRF_GPIOTE->CONFIG[DBG_RADIO_READY] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
+  //                         GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
+  //                         DBG_RADIO_READY << GPIOTE_CONFIG_PSEL_Pos |
+  //                         GPIOTE_CONFIG_OUTINIT_High << GPIOTE_CONFIG_OUTINIT_Pos;
 
-  NRF_PPI->CH[DBG_RADIO_READY].EEP = (uint32_t) (&NRF_RADIO->EVENTS_READY);
-  NRF_PPI->CH[DBG_RADIO_READY].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_READY]);
-  NRF_PPI->CHENSET = (1 << DBG_RADIO_READY);
+  // NRF_PPI->CH[DBG_RADIO_READY].EEP = (uint32_t) (&NRF_RADIO->EVENTS_READY);
+  // NRF_PPI->CH[DBG_RADIO_READY].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_READY]);
+  // NRF_PPI->CHENSET = (1 << DBG_RADIO_READY);
 
-  /* Toggle pin when timer triggers radio START (TX) */
-  NRF_GPIOTE->CONFIG[DBG_RADIO_TIMER] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
-                          GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
-                          DBG_RADIO_TIMER << GPIOTE_CONFIG_PSEL_Pos |
-                          GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos;
+  // /* Toggle pin when timer triggers radio START (TX) */
+  // NRF_GPIOTE->CONFIG[DBG_RADIO_TIMER] = GPIOTE_CONFIG_MODE_Task << GPIOTE_CONFIG_MODE_Pos |
+  //                         GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos |
+  //                         DBG_RADIO_TIMER << GPIOTE_CONFIG_PSEL_Pos |
+  //                         GPIOTE_CONFIG_OUTINIT_Low << GPIOTE_CONFIG_OUTINIT_Pos;
 
-  NRF_PPI->CH[DBG_RADIO_TIMER].EEP = (uint32_t) (&(NRF_TIMER0->EVENTS_COMPARE[1]));
-  NRF_PPI->CH[DBG_RADIO_TIMER].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_TIMER]);
-  NRF_PPI->CHENSET = (1 << DBG_RADIO_TIMER);
+  // NRF_PPI->CH[DBG_RADIO_TIMER].EEP = (uint32_t) (&(NRF_TIMER0->EVENTS_COMPARE[1]));
+  // NRF_PPI->CH[DBG_RADIO_TIMER].TEP = (uint32_t) (&NRF_GPIOTE->TASKS_OUT[DBG_RADIO_TIMER]);
+  // NRF_PPI->CHENSET = (1 << DBG_RADIO_TIMER);
 
-  NVIC_EnableIRQ(TIMER0_IRQn);
+  // NVIC_EnableIRQ(TIMER0_IRQn);
 
   m_state_idle_exit ();
 
-  if(channel == 40)
-	  channel = 37;
+  // if(channel == 40)
+	 //  channel = 37;
 
-  radio_init (channel++);
+  radio_init (39);
   radio_rx_timeout_init ();
 
   m_state_receive_adv_entry ();

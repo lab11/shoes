@@ -92,12 +92,12 @@ void radio_init (uint8_t channel)
   /* Configure Access Address according to the BLE standard */
   NRF_RADIO->PREFIX0 = 0x8e;
   NRF_RADIO->BASE0 = 0x89bed600;
-  
+
   /* Use logical address 0 (prefix0 + base0) = 0x8E89BED6 when transmitting and receiving */
   NRF_RADIO->TXADDRESS = 0x00;
   NRF_RADIO->RXADDRESSES = 0x01;
 
-  /* PCNF-> Packet Configuration. 
+  /* PCNF-> Packet Configuration.
    * We now need to configure the sizes S0, S1 and length field to match the
    * datapacket format of the advertisement packets.
    */
@@ -127,14 +127,14 @@ void radio_init (uint8_t channel)
   NRF_RADIO->EVENTS_END = 0;
   NRF_RADIO->EVENTS_READY = 0;
   NRF_RADIO->EVENTS_ADDRESS = 0;
-  
+
   /* Enable interrupt on events */
   NRF_RADIO->INTENSET = RADIO_INTENSET_ADDRESS_Msk | RADIO_INTENSET_DISABLED_Msk;
-  
+
   /* Enable RADIO interrupts */
   NVIC_ClearPendingIRQ(RADIO_IRQn);
   NVIC_EnableIRQ(RADIO_IRQn);
-  
+
   m_radio_dir = RADIO_DIR_NONE;
 }
 
@@ -148,7 +148,7 @@ void radio_disable (void)
 
   /* Abort TX */
   NRF_RADIO->TASKS_DISABLE = 1;
-  
+
   m_radio_dir = RADIO_DIR_NONE;
 }
 
@@ -176,12 +176,13 @@ uint8_t radio_rssi_get (void)
   {
     sample = RADIO_RSSI_INVALID;
   }
-  
+
   /* Clear event */
   NRF_RADIO->EVENTS_RSSIEND = 0;
 
   return sample;
 }
+
 void radio_rx_prepare (bool start_immediately)
 {
   /* Clear events */
@@ -192,7 +193,7 @@ void radio_rx_prepare (bool start_immediately)
 
   /* Set shorts */
   NRF_RADIO->SHORTS = RADIO_SHORTS_READY_START_Msk | RADIO_SHORTS_END_DISABLE_Msk;
-  
+
   if (start_immediately)
   {
     NRF_RADIO->TIFS = 0;
@@ -201,7 +202,7 @@ void radio_rx_prepare (bool start_immediately)
   {
     NRF_RADIO->TIFS = 149;
   }
-  
+
   m_radio_dir = RADIO_DIR_RX;
 }
 
@@ -223,13 +224,13 @@ void radio_rx_timeout_enable (void)
   NRF_TIMER0->EVENTS_COMPARE[1] = 0;
   NRF_TIMER0->CC[1] += 200;
   NRF_TIMER0->INTENSET = TIMER_INTENSET_COMPARE1_Msk;
-  
+
   /* Capture timer on radio address event.
    */
   NRF_PPI->CH[5].EEP = (uint32_t) (&NRF_RADIO->EVENTS_ADDRESS);
   NRF_PPI->CH[5].TEP = (uint32_t) (&NRF_TIMER0->TASKS_CAPTURE[1]);
   NRF_PPI->CHENSET = PPI_CHENSET_CH5_Msk;
-  
+
   /* Disable radio on timeout.
   */
   NRF_PPI->CH[6].EEP = (uint32_t) (&NRF_TIMER0->EVENTS_COMPARE[1]);
@@ -254,53 +255,70 @@ void radio_tx_prepare (void)
 {
   /* Clear events */
   NRF_RADIO->EVENTS_DISABLED = 0;
-  
+
   /* Enable RX */
   NRF_RADIO->TASKS_TXEN = 1;
-  
+
   /* Set shorts */
   NRF_RADIO->SHORTS = RADIO_SHORTS_READY_START_Msk | RADIO_SHORTS_END_DISABLE_Msk | RADIO_SHORTS_DISABLED_RXEN_Msk;
-  
-  NRF_RADIO->TIFS = 149;  
-  
+
+  NRF_RADIO->TIFS = 149;
+
   m_radio_dir = RADIO_DIR_TX;
 }
 
 void radio_event_cb (void)
 {
   bool crc_valid;
-  
-  if (NRF_RADIO->EVENTS_DISABLED != 0)
-  {
-    switch (m_radio_dir)
-    {
+
+  // led_toggle(25);
+
+  if (NRF_RADIO->EVENTS_DISABLED != 0) {
+    switch (m_radio_dir) {
       case RADIO_DIR_RX:
         /* Disable RSSISTART short so sample isn't overwritten */
         NRF_RADIO->SHORTS &= ~RADIO_SHORTS_ADDRESS_RSSISTART_Msk;
-      
+
         crc_valid = NRF_RADIO->CRCSTATUS != 0;
-        ll_scan_rx_cb (crc_valid);
+        rx_callback(crc_valid);
+        // led_toggle(25);
         break;
       case RADIO_DIR_TX:
-        ll_scan_tx_cb ();
+        tx_callback ();
+
         break;
+
+      case RADIO_DIR_NONE:
+        // led_toggle(25);
+        break;
+
+        // case 0xff:
+        // led_toggle(25);
+        // break;
+
+
       default:
+      // led_toggle(25);
         break;
     }
     NRF_RADIO->EVENTS_DISABLED = 0;
+    // led_toggle(25);
   }
-  
+
   if (NRF_RADIO->EVENTS_ADDRESS != 0)
   {
+
     if (m_radio_dir == RADIO_DIR_RX)
     {
-      radio_rx_timeout_disable ();      
+      // led_toggle(25);
+      radio_rx_timeout_disable ();
     }
     NRF_RADIO->EVENTS_ADDRESS = 0;
+    // led_toggle(25);
   }
 }
 
 void radio_timeout_cb (void)
 {
-  ll_scan_timeout_cb ();
+  // ll_scan_timeout_cb ();
 }
