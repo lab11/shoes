@@ -35,7 +35,6 @@
 #include "radio.h"
 
 #include "channel_resolver.h"
-#include "ll_scan.h"
 
 #include "nrf_gpio.h"
 #include "nrf_soc.h"
@@ -284,6 +283,7 @@ void radio_event_cb (void)
         // led_toggle(25);
         break;
       case RADIO_DIR_TX:
+        // led_toggle(25);
         tx_callback ();
 
         break;
