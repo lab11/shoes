@@ -4786,7 +4786,10 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <instance part="R5" gate="G$1" x="81.28" y="116.84" rot="R270">
 <attribute name="DIGIKEY" x="81.28" y="116.84" size="1.27" layer="96" rot="R270" display="off"/>
 </instance>
-<instance part="A1" gate="G$1" x="241.3" y="83.82"/>
+<instance part="A1" gate="G$1" x="241.3" y="83.82" smashed="yes">
+<attribute name="NAME" x="237.49" y="89.662" size="1.016" layer="95" font="vector" ratio="12"/>
+<attribute name="VALUE" x="244.602" y="87.884" size="1.016" layer="96" font="vector" ratio="12" rot="R270"/>
+</instance>
 <instance part="L2" gate="G$1" x="96.52" y="137.16">
 <attribute name="DIGIKEY" x="96.52" y="137.16" size="1.778" layer="96" display="off"/>
 </instance>
