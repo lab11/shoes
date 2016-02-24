@@ -4,28 +4,15 @@
 #include "nordic_common.h"
 #include "nrf.h"
 #include "nrf_soc.h"
-// #include "nrf_adc.h"
 #include "app_error.h"
-// #include "nrf51_bitfields.h"
-// #include "ble.h"
-// #include "ble_hci.h"
-// #include "ble_srv_common.h"
-
-
-#include "ble_conn_params.h"
-#include "sensorsim.h"
 #include "softdevice_handler.h"
 #include "app_timer.h"
-// #include "ble_ias_c.h"
 #include "app_util.h"
-// #include "btle.h"
-// #include "nrf_assert.h"
-// #include "nrf_scan.h"
 #include "nrf_drv_spi.h"
 #include "app_gpiote.h"
+#include "nrf_delay.h"
 
-
- #include "nrf_delay.h"
+#include "radio.h"
 
 #include "led.h"
 #include "adxl362.h"
@@ -43,19 +30,6 @@
 
 #define TIMESLOT_DISTANCE_US 100000
 #define TIMESLOT_TIMEOUT_US 200000
-
-// static btle_cmd_param_le_write_scan_parameters_t scan_param = {
-//   BTLE_SCAN_TYPE_PASSIVE,         /* Active scanning. SCAN_REQ packets may be sent */
-//   TIMESLOT_DISTANCE_US,           /* Time from controller starts its last scan until it begins the next scan */
-//   TIMESLOT_LENGTH_US,             /* Duration of the scan */
-//   BTLE_ADDR_TYPE_PUBLIC,          /* Use public address type */
-//   BTLE_SCAN_FILTER_ACCEPT_ANY     /* Accept anyone (whitelist unsupported for now) */
-// };
-
-// static btle_cmd_param_le_write_scan_enable_t scan_enable = {
-//   BTLE_SCAN_MODE_ENABLE,              /* Enable scanner */
-//   BTLE_SCAN_DUPLICATE_FILTER_DISABLE  /* Do not filter duplicates */
-// };
 
 
 #define ACCELEROMETER_INTERRUPT_PIN 5
@@ -79,9 +53,6 @@ static nrf_radio_request_t m_timeslot_req_earliest = {
 
 void timeslot_sys_event_handler(uint32_t evt);
 
-
-
-static app_timer_id_t m_battery_timer_id; /**< Battery measurement timer. */
 
 
 void ble_error(uint32_t error_code) {
@@ -143,7 +114,6 @@ static void timers_init(void) {
  * @param[in] p_ble_evt  Bluetooth stack event.
  */
 static void on_ble_evt(ble_evt_t * p_ble_evt) {
-    uint32_t err_code = NRF_SUCCESS;
 
     switch (p_ble_evt->header.evt_id) {
         case BLE_GAP_EVT_CONNECTED:
@@ -276,14 +246,14 @@ advertisement_t advertisement = {
 };
 
 
-static uint8_t m_tx_buf[] =
-{
-  0x01,                               // BLE Header (PDU_TYPE: SCAN_REQ, TXadd: 1 (random address), RXadd: 1 (random address)
-  0x00,                               // Length of payload: 12
-  0x00,                               // Padding bits for S1 (REF: the  nRF51 reference manual 16.1.2)
-  0xDE, 0xDE, 0xDE, 0xDE, 0xDE, 0xDE, // InitAddr LSByte first
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // AdvAddr LSByte first
-};
+// static uint8_t m_tx_buf[] =
+// {
+//   0x01,                               // BLE Header (PDU_TYPE: SCAN_REQ, TXadd: 1 (random address), RXadd: 1 (random address)
+//   0x00,                               // Length of payload: 12
+//   0x00,                               // Padding bits for S1 (REF: the  nRF51 reference manual 16.1.2)
+//   0xDE, 0xDE, 0xDE, 0xDE, 0xDE, 0xDE, // InitAddr LSByte first
+//   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // AdvAddr LSByte first
+// };
 
 
 
@@ -369,7 +339,7 @@ void rx_callback (bool crc_valid) {
                           (((uint64_t) m_rx_buf[8]) << 40);
 
             uint8_t flood_id = m_rx_buf[17];
-            uint8_t extra = m_rx_buf[18];
+            // uint8_t extra = m_rx_buf[18];
 
             // Check to see if this is a new flood
             if (last_initiator != id || last_flood_id != flood_id) {

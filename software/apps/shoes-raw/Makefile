@@ -18,9 +18,6 @@ APPLICATION_SRCS += led.c
 APPLICATION_SRCS += nrf_drv_spi.c
 APPLICATION_SRCS += nrf_drv_gpiote.c
 
-APPLICATION_SRCS += channel_resolver.c
-APPLICATION_SRCS += radio.c
-
 APPLICATION_SRCS += adxl362.c
 
 SOFTDEVICE_MODEL = s130

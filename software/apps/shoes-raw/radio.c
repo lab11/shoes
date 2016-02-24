@@ -36,6 +36,8 @@
 
 #include "channel_resolver.h"
 
+#include "main.h"
+
 #include "nrf_gpio.h"
 #include "nrf_soc.h"
 
@@ -266,11 +268,8 @@ void radio_tx_prepare (void)
   m_radio_dir = RADIO_DIR_TX;
 }
 
-void radio_event_cb (void)
-{
+void radio_event_cb (void) {
   bool crc_valid;
-
-  // led_toggle(25);
 
   if (NRF_RADIO->EVENTS_DISABLED != 0) {
     switch (m_radio_dir) {
@@ -280,45 +279,23 @@ void radio_event_cb (void)
 
         crc_valid = NRF_RADIO->CRCSTATUS != 0;
         rx_callback(crc_valid);
-        // led_toggle(25);
         break;
+
       case RADIO_DIR_TX:
-        // led_toggle(25);
         tx_callback ();
-
         break;
-
-      case RADIO_DIR_NONE:
-        // led_toggle(25);
-        break;
-
-        // case 0xff:
-        // led_toggle(25);
-        // break;
-
 
       default:
-      // led_toggle(25);
         break;
     }
     NRF_RADIO->EVENTS_DISABLED = 0;
-    // led_toggle(25);
   }
 
-  if (NRF_RADIO->EVENTS_ADDRESS != 0)
-  {
-
-    if (m_radio_dir == RADIO_DIR_RX)
-    {
-      // led_toggle(25);
+  if (NRF_RADIO->EVENTS_ADDRESS != 0) {
+    if (m_radio_dir == RADIO_DIR_RX) {
       radio_rx_timeout_disable ();
     }
     NRF_RADIO->EVENTS_ADDRESS = 0;
-    // led_toggle(25);
   }
 }
 
-void radio_timeout_cb (void)
-{
-  // ll_scan_timeout_cb ();
-}
