@@ -36,7 +36,7 @@
 <layer number="26" name="bNames" color="7" fill="1" visible="yes" active="yes"/>
 <layer number="27" name="tValues" color="7" fill="1" visible="no" active="yes"/>
 <layer number="28" name="bValues" color="7" fill="1" visible="no" active="yes"/>
-<layer number="29" name="tStop" color="7" fill="3" visible="no" active="yes"/>
+<layer number="29" name="tStop" color="7" fill="3" visible="yes" active="yes"/>
 <layer number="30" name="bStop" color="7" fill="6" visible="no" active="yes"/>
 <layer number="31" name="tCream" color="7" fill="4" visible="no" active="yes"/>
 <layer number="32" name="bCream" color="7" fill="5" visible="no" active="yes"/>
@@ -1027,8 +1027,8 @@ This Sunstone Circuits 2 Layer .DRU has been set to cover our minimum requiremen
 <contactref element="U1" pad="1"/>
 <contactref element="R5" pad="1"/>
 <contactref element="J4" pad="1"/>
-<via x="4.2672" y="-9.652" extent="1-16" drill="1.016"/>
-<via x="6.8834" y="-8.001" extent="1-16" drill="1.016"/>
+<via x="4.2672" y="-9.652" extent="1-16" drill="1.016" alwaysstop="yes"/>
+<via x="6.8834" y="-8.001" extent="1-16" drill="1.016" alwaysstop="yes"/>
 <wire x1="-1.689" y1="-9.398" x2="-1.737" y2="-9.35" width="0.2032" layer="1"/>
 <contactref element="S1" pad="1"/>
 <contactref element="S1" pad="2"/>
@@ -1268,9 +1268,6 @@ This Sunstone Circuits 2 Layer .DRU has been set to cover our minimum requiremen
 <wire x1="2.4384" y1="-7.886" x2="1.766" y2="-7.886" width="0.2032" layer="1"/>
 <wire x1="1.766" y1="-7.886" x2="1.502" y2="-8.15" width="0.2032" layer="1"/>
 <wire x1="1.502" y1="-8.15" x2="-0.937" y2="-8.15" width="0.2032" layer="1"/>
-</signal>
-<signal name="P25">
-<contactref element="U1" pad="44"/>
 </signal>
 <signal name="MAIN_SWITCH">
 <contactref element="S1" pad="4"/>

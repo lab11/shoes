@@ -28,7 +28,7 @@
 #define UMICH_COMPANY_IDENTIFIER 0x02E0
 
 #define LED0 13
-#define LED1 25
+#define LED1 8
 
 // Intervals for advertising and connections
 static simple_ble_config_t ble_config = {
@@ -51,7 +51,7 @@ typedef struct {
 } __attribute__((packed)) shoe_pkt_t;
 
 
-#define ACCELEROMETER_INTERRUPT_PIN 5
+#define ACCELEROMETER_INTERRUPT_PIN 11
 
 static nrf_drv_spi_t _spi = NRF_DRV_SPI_INSTANCE(SPI_INSTANCE);
 
@@ -104,6 +104,7 @@ void ble_error(uint32_t error_code) {
 
 void ble_evt_adv_report (ble_evt_t* p_ble_evt) {
     uint32_t err;
+    // led_toggle(LED1);
 
     // Setup some pointers and data structures. Wow can this get verbose.
     ble_gap_evt_adv_report_t* adv = &p_ble_evt->evt.gap_evt.params.adv_report;
@@ -141,7 +142,7 @@ void ble_evt_adv_report (ble_evt_t* p_ble_evt) {
 
     if (shoe->seq != last_seq_number) {
         last_seq_number = shoe->seq;
-        led_toggle(LED1);
+        // led_toggle(LED1);
     }
 
 
@@ -159,7 +160,7 @@ static void app_timer_handler (void* p_context) {
 static void acc_interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
-        // led_toggle(LED0);
+        led_toggle(LED1);
 
         me.seq++;
         adv_init(&me);

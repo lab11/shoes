@@ -20,9 +20,9 @@
 
 
 
-#define LED0 25
+#define LED0 8
 
-#define DEVICE_NAME "Shoes!"                                /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME "Shoes!"
 
 #define TIMESLOT_LENGTH_US   100000
 // #define TIMESLOT_LENGTH_US   50000
@@ -32,7 +32,7 @@
 #define TIMESLOT_TIMEOUT_US 200000
 
 
-#define ACCELEROMETER_INTERRUPT_PIN 5
+#define ACCELEROMETER_INTERRUPT_PIN 11
 
 static nrf_drv_spi_t _spi = NRF_DRV_SPI_INSTANCE(SPI_INSTANCE);
 
@@ -310,7 +310,7 @@ void relay_flood_packet (int8_t rssi) {
 
 void rx_callback (bool crc_valid) {
     if (crc_valid) {
-        led_toggle(25);
+        // led_toggle(LED0);
 
         int8_t rssi = -1 * (int8_t) radio_rssi_get();
 
@@ -347,7 +347,7 @@ void rx_callback (bool crc_valid) {
                 last_initiator = id;
                 last_flood_id = flood_id;
 
-                led_on(25);
+                // led_on(25);
 
                 // TODO: setup timer to turn off led after flood is done
 
@@ -450,12 +450,14 @@ void accelerometer_init () {
     intmap_2.INACT = 0;
     intmap_2.AWAKE = 1;
     intmap_2.INT_LOW = 1;
-    adxl362_config_INTMAP(&intmap_2, false);
+    adxl362_config_INTMAP(&intmap_2, true);
 
     adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, true , true);
     adxl362_activity_inactivity_interrupt_enable();
 
     adxl362_read_status_reg();
+
+    led_on(LED0);
 
 
     // Configure the accel interrupt

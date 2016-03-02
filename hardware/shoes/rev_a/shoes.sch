@@ -5219,12 +5219,6 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <pinref part="U1" gate="G$1" pin="P08"/>
 </segment>
 </net>
-<net name="P25" class="0">
-<segment>
-<pinref part="U1" gate="G$1" pin="P25"/>
-<wire x1="160.02" y1="101.6" x2="162.56" y2="101.6" width="0.1524" layer="91"/>
-</segment>
-</net>
 <net name="MAIN_SWITCH" class="0">
 <segment>
 <pinref part="S1" gate="G$1" pin="P$2"/>
