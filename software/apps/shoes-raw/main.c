@@ -21,6 +21,10 @@
 
 
 #define LED0 8
+#define LED1 26
+#define LED2 29
+#define LED3 9
+#define LED4 10
 
 #define DEVICE_NAME "Shoes!"
 
@@ -33,6 +37,7 @@
 
 
 #define ACCELEROMETER_INTERRUPT_PIN 11
+#define BUTTON_INTERRUPT_PIN 16
 
 static nrf_drv_spi_t _spi = NRF_DRV_SPI_INSTANCE(SPI_INSTANCE);
 
@@ -407,13 +412,27 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 }
 
 
+static void led_iterate () {
+    static uint8_t state = 0;
+
+    if (state & 0x1) led_off(LED1); else led_on(LED1);
+    if (state & 0x2) led_off(LED4); else led_on(LED4);
+    if (state & 0x4) led_off(LED2); else led_on(LED2);
+    if (state & 0x8) led_off(LED3); else led_on(LED3);
+
+    state += 1;
+    if (state > 0x0F) {
+        state = 0;
+    }
+}
 
 
 
-static void acc_interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
+
+static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
-        led_toggle(LED0);
+        // led_toggle(LED0);
 
         // me.seq++;
         // adv_init(&me);
@@ -423,10 +442,18 @@ static void acc_interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
 
         start_flood();
     }
+
+    if (pins_l2h & (1 << BUTTON_INTERRUPT_PIN)) {
+        // Button press
+        // led_toggle(LED0);
+        led_iterate();
+    }
 }
 
 
 void accelerometer_init () {
+    uint32_t err;
+
     // Configure the accel hardware
     adxl362_accelerometer_init(&_spi, adxl362_NOISE_NORMAL, true, false, false);
 
@@ -457,22 +484,33 @@ void accelerometer_init () {
 
     adxl362_read_status_reg();
 
-    led_on(LED0);
+    // led_on(LED0);
 
 
     // Configure the accel interrupt
 
     // Need one user: accelerometer
-    APP_GPIOTE_INIT(1);
+    APP_GPIOTE_INIT(2);
 
     // Register the accelerometer
-    app_gpiote_user_register(&gpiote_user_acc,
-                             1<<ACCELEROMETER_INTERRUPT_PIN,   // Which pins we want the interrupt for low to high
-                             1<<ACCELEROMETER_INTERRUPT_PIN,   // Which pins we want the interrupt for high to low
-                             acc_interrupt_handler);
+    err = app_gpiote_user_register(&gpiote_user_acc,
+                             // (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+                             (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+                             // (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+                             // 1<<ACCELEROMETER_INTERRUPT_PIN,   // Which pins we want the interrupt for high to low
+                             // 1<<BUTTON_INTERRUPT_PIN,   // Which pins we want the interrupt for high to low
+                             (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
+                             interrupt_handler);
+
+    if (err != NRF_SUCCESS) {
+        led_on(LED0);
+    }
 
     // Enable the interrupt!
-    app_gpiote_user_enable(gpiote_user_acc);
+    err = app_gpiote_user_enable(gpiote_user_acc);
+    if (err != NRF_SUCCESS) {
+        led_on(LED0);
+    }
 }
 
 
@@ -486,6 +524,21 @@ int main () {
     // Initialize.
     led_init(LED0);
     led_off(LED0);
+
+    led_init(LED1);
+    led_on(LED1);
+    led_init(LED2);
+    led_on(LED2);
+    led_init(LED3);
+    led_on(LED3);
+    led_init(LED4);
+    led_on(LED4);
+
+    // led_off(LED1);
+    // led_off(LED4);
+
+    // led_off(LED2);
+    // led_off(LED3);
 
     timers_init();
 
