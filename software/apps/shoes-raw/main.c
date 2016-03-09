@@ -315,7 +315,7 @@ void relay_flood_packet (int8_t rssi) {
 
 void rx_callback (bool crc_valid) {
     if (crc_valid) {
-        // led_toggle(LED0);
+        led_toggle(LED0);
 
         int8_t rssi = -1 * (int8_t) radio_rssi_get();
 
@@ -415,15 +415,15 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 static void led_iterate () {
     static uint8_t state = 0;
 
-    if (state & 0x1) led_off(LED1); else led_on(LED1);
-    if (state & 0x2) led_off(LED4); else led_on(LED4);
-    if (state & 0x4) led_off(LED2); else led_on(LED2);
-    if (state & 0x8) led_off(LED3); else led_on(LED3);
-
     state += 1;
     if (state > 0x0F) {
         state = 0;
     }
+
+    if (state & 0x1) led_off(LED1); else led_on(LED1);
+    if (state & 0x2) led_off(LED2); else led_on(LED2);
+    if (state & 0x4) led_off(LED4); else led_on(LED4);
+    if (state & 0x8) led_off(LED3); else led_on(LED3);
 }
 
 
@@ -433,6 +433,7 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
         // led_toggle(LED0);
+        led_iterate();
 
         // me.seq++;
         // adv_init(&me);
