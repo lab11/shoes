@@ -438,35 +438,21 @@ void rx_callback (bool crc_valid) {
         // Check to see if this packet is us
         if (inadv->manuf.type == 0xff &&
             inadv->manuf.man_id1 == 0xe0 &&
-            inadv->manuf.man_id2 == 0x02) {
-
+            inadv->manuf.man_id2 == 0x02 &&
             // Check name
-            if (memcmp(inadv->name+2, "SHOES!", 6) == 0) {
+            memcmp(inadv->name+2, "SHOES!", 6) == 0) {
 
-        //     }
-        // }
-        // // Do this in a super hardcoded way. So nobody better change this
-        // // packet...
-        // if (m_rx_buf[13] == 0xff &&  // Manufacturer data and service id
-        //     m_rx_buf[14] == 0xe0 &&
-        //     m_rx_buf[15] == 0x02 &&
-        //     m_rx_buf[16] == 0x14 &&
-        //     m_rx_buf[20] == 0x09 &&  // Device name
-        //     m_rx_buf[21] == 0x53 &&
-        //     m_rx_buf[22] == 0x48 &&
-        //     m_rx_buf[23] == 0x4f &&
-        //     m_rx_buf[24] == 0x45 &&
-        //     m_rx_buf[25] == 0x53 &&
-        //     m_rx_buf[26] == 0x21) {
-        //     // Yes! This is us!
+            // Decide what type of packet this is
+            switch (inadv->manuf.packet_type) {
 
+                // Flood packet from another node
+                case SHOES_PKT_TYPE_FLOOD: {
 
-                // Decide what type of packet this is
-                switch (inadv->manuf.packet_type) {
-
-
-                    // Flood packet from another node
-                    case SHOES_PKT_TYPE_FLOOD: {
+                    // Decide if this flood was started by us. If so,
+                    // we definitely want to ignore it.
+                    if (inadv->manuf.data[3] != advertisement.src_addr[0] ||
+                        inadv->manuf.data[3] != advertisement.src_addr[0] ||
+                        inadv->manuf.data[3] != advertisement.src_addr[0]) {
 
                         // Get the per-flood-initiator unique id for this flood
                         uint8_t flood_id = inadv->manuf.data[0];
@@ -489,38 +475,15 @@ void rx_callback (bool crc_valid) {
                             join_flood(rssi, id, flood_id);
 
                         }
-
-
-
-                        // // Check to see if this is a new flood
-                        // if (_last_initiator != id || _last_flood_id != flood_id) {
-                        //     // New flood!
-                        //     last_initiator = id;
-                        //     last_flood_id = flood_id;
-
-                        //     // led_on(25);
-
-                        //     // TODO: setup timer to turn off led after flood is done
-
-
-                        //     // Now spread the flood!
-                        //     relay_flood_packet(rssi);
-
-                        //     // Don't need to keep scanning at this point.
-                        //     return;
-                        // }
-
-                        break;
                     }
 
-                    default:
-                        break;
+                    break;
                 }
 
-
-
-
+                default:
+                    break;
             }
+
         }
 
     }
