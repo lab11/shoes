@@ -35,8 +35,8 @@
 #define FLOOD_DURATION APP_TIMER_TICKS(5000, 0)
 
 
-// Types
-#define SHOES_PKT_TYPE_FLOOD 0x01
+// Types of packets in the Shoes! protocol
+#define SHOES_PKT_TYPE_FLOOD 0x01  // Start or continue a flood
 
 
 // Pin defines
@@ -65,7 +65,7 @@ static nrf_radio_signal_callback_return_param_t m_signal_callback_return_param;
 static nrf_radio_request_t m_timeslot_req_earliest = {
     NRF_RADIO_REQ_TYPE_EARLIEST,
     .params.earliest = {
-        NRF_RADIO_HFCLK_CFG_DEFAULT,
+        NRF_RADIO_HFCLK_CFG_NO_GUARANTEE,
         NRF_RADIO_PRIORITY_NORMAL,
         TIMESLOT_LENGTH_US,
         TIMESLOT_TIMEOUT_US
@@ -78,158 +78,13 @@ APP_TIMER_DEF(timer_flood_retransmission);
 // Timer for going back to idle after a flood has started
 APP_TIMER_DEF(timer_flood_end);
 
+// Keep track of unique flood id for this node
+static uint8_t _my_flood_counter = 0;
 
+// How many floods we are currently seeing
+static uint8_t _current_flood_count = 0;
 
-
-
-
-
-
-
-
-
-
-void timeslot_sys_event_handler(uint32_t evt);
-
-
-
-void ble_error(uint32_t error_code) {
-    led_on(LED0);
-}
-
-/**@brief Callback function for asserts in the SoftDevice.
- *
- * @details This function will be called in case of an assert in the SoftDevice.
- *
- * @warning This handler is an example only and does not fit a final product. You need to analyze
- *          how your product is supposed to react in case of Assert.
- * @warning On assert from the SoftDevice, the system can only recover on reset.
- *
- * @param[in] line_num   Line number of the failing ASSERT call.
- * @param[in] file_name  File name of the failing ASSERT call.
- */
-void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name) {
-    app_error_handler(0x5599, line_num, p_file_name);
-}
-
-
-
-
-
-
-/**@brief Function for putting the chip into sleep mode.
- *
- * @note This function will not return.
- */
-// static void sleep_mode_enter(void)
-// {
-//     uint32_t err_code = bsp_indication_set(BSP_INDICATE_IDLE);
-//     APP_ERROR_CHECK(err_code);
-
-//     // Prepare wakeup buttons.
-//     err_code = bsp_btn_ble_sleep_mode_prepare();
-//     APP_ERROR_CHECK(err_code);
-
-//     // Go to system-off mode (this function will not return; wakeup will cause a reset).
-//     err_code = sd_power_system_off();
-//     APP_ERROR_CHECK(err_code);
-// }
-
-
-
-
-
-/**@brief Function for handling the Application's BLE Stack events.
- *
- * @param[in] p_ble_evt  Bluetooth stack event.
- */
-static void on_ble_evt(ble_evt_t * p_ble_evt) {
-
-    switch (p_ble_evt->header.evt_id) {
-        case BLE_GAP_EVT_CONNECTED:
-            break;
-
-        case BLE_GAP_EVT_DISCONNECTED:
-            break;
-
-        case BLE_GAP_EVT_TIMEOUT:
-            break;
-
-        case BLE_GATTC_EVT_TIMEOUT:
-        case BLE_GATTS_EVT_TIMEOUT:
-            break;
-
-        default:
-            // No implementation needed.
-            break;
-    }
-}
-
-static void ble_evt_dispatch(ble_evt_t * p_ble_evt) {
-    on_ble_evt(p_ble_evt);
-}
-
-static void sys_evt_dispatch (uint32_t sys_evt) {
-    timeslot_sys_event_handler(sys_evt);
-}
-
-
-
-
-
-// Function for the Power manager.
-static void power_manage (void) {
-    uint32_t err_code = sd_app_evt_wait();
-    APP_ERROR_CHECK(err_code);
-}
-
-
-void timeslot_sys_event_handler (uint32_t evt) {
-    uint32_t err_code;
-
-    switch (evt) {
-      case NRF_EVT_RADIO_SESSION_IDLE:
-      case NRF_EVT_RADIO_BLOCKED:
-        // Request a new timeslot
-        err_code = sd_radio_request(&m_timeslot_req_earliest);
-        APP_ERROR_CHECK(err_code);
-        break;
-
-      case NRF_EVT_RADIO_SESSION_CLOSED:
-        break;
-
-      case NRF_EVT_RADIO_SIGNAL_CALLBACK_INVALID_RETURN:
-        // ASSERT(false);
-        break;
-
-      case NRF_EVT_RADIO_CANCELED:
-        err_code = sd_radio_request(&m_timeslot_req_earliest);
-        APP_ERROR_CHECK(err_code);
-        break;
-
-      default:
-        break;
-    }
-}
-
-
-
-static void led_iterate () {
-    static uint8_t state = 0;
-
-    state += 1;
-    if (state > 0x0F) {
-        state = 0;
-    }
-
-    if (state & 0x1) led_off(LED1); else led_on(LED1);
-    if (state & 0x2) led_off(LED2); else led_on(LED2);
-    if (state & 0x4) led_off(LED4); else led_on(LED4);
-    if (state & 0x8) led_off(LED3); else led_on(LED3);
-}
-
-
-
+// Advertisement packet structure
 #define RX_BUF_SIZE 128
 static uint8_t m_rx_buf[RX_BUF_SIZE];
 
@@ -273,18 +128,113 @@ advertisement_t advertisement = {
 };
 
 
-// static uint8_t m_tx_buf[] =
+/*******************************************************************************
+ * Function signatures
+ ******************************************************************************/
+
+void timeslot_sys_event_handler (uint32_t evt);
+
+
+/*******************************************************************************
+ * Error callbacks
+ ******************************************************************************/
+
+void ble_error (uint32_t error_code) {
+    led_on(LED0);
+}
+
+void assert_nrf_callback (uint16_t line_num, const uint8_t * p_file_name) {
+    app_error_handler(0x5599, line_num, p_file_name);
+}
+
+
+/*******************************************************************************
+ * System functions
+ ******************************************************************************/
+
+/**@brief Function for putting the chip into sleep mode.
+ *
+ * @note This function will not return.
+ */
+// static void sleep_mode_enter(void)
 // {
-//   0x01,                               // BLE Header (PDU_TYPE: SCAN_REQ, TXadd: 1 (random address), RXadd: 1 (random address)
-//   0x00,                               // Length of payload: 12
-//   0x00,                               // Padding bits for S1 (REF: the  nRF51 reference manual 16.1.2)
-//   0xDE, 0xDE, 0xDE, 0xDE, 0xDE, 0xDE, // InitAddr LSByte first
-//   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // AdvAddr LSByte first
-// };
+//     uint32_t err_code = bsp_indication_set(BSP_INDICATE_IDLE);
+//     APP_ERROR_CHECK(err_code);
+
+//     // Prepare wakeup buttons.
+//     err_code = bsp_btn_ble_sleep_mode_prepare();
+//     APP_ERROR_CHECK(err_code);
+
+//     // Go to system-off mode (this function will not return; wakeup will cause a reset).
+//     err_code = sd_power_system_off();
+//     APP_ERROR_CHECK(err_code);
+// }
 
 
 
-void continue_scan () {
+static void on_ble_evt(ble_evt_t * p_ble_evt) {
+    switch (p_ble_evt->header.evt_id) {
+        case BLE_GAP_EVT_CONNECTED:
+        case BLE_GAP_EVT_DISCONNECTED:
+        case BLE_GAP_EVT_TIMEOUT:
+        case BLE_GATTC_EVT_TIMEOUT:
+        case BLE_GATTS_EVT_TIMEOUT:
+            break;
+
+        default:
+            break;
+    }
+}
+
+static void ble_evt_dispatch (ble_evt_t * p_ble_evt) {
+    on_ble_evt(p_ble_evt);
+}
+
+static void sys_evt_dispatch (uint32_t sys_evt) {
+    timeslot_sys_event_handler(sys_evt);
+}
+
+// Function for the Power manager.
+static void power_manage (void) {
+    uint32_t err_code = sd_app_evt_wait();
+    APP_ERROR_CHECK(err_code);
+}
+
+void timeslot_sys_event_handler (uint32_t evt) {
+    uint32_t err_code;
+
+    switch (evt) {
+      case NRF_EVT_RADIO_SESSION_IDLE:
+      case NRF_EVT_RADIO_BLOCKED:
+        // Request a new timeslot
+        err_code = sd_radio_request(&m_timeslot_req_earliest);
+        APP_ERROR_CHECK(err_code);
+        break;
+
+      case NRF_EVT_RADIO_SESSION_CLOSED:
+        break;
+
+      case NRF_EVT_RADIO_SIGNAL_CALLBACK_INVALID_RETURN:
+        // ASSERT(false);
+        break;
+
+      case NRF_EVT_RADIO_CANCELED:
+        err_code = sd_radio_request(&m_timeslot_req_earliest);
+        APP_ERROR_CHECK(err_code);
+        break;
+
+      default:
+        break;
+    }
+}
+
+
+
+/*******************************************************************************
+ * Control the radio
+ ******************************************************************************/
+
+static void continue_scan () {
     radio_disable();
 
     memset((void*) m_rx_buf, '\0', RX_BUF_SIZE);
@@ -294,7 +244,7 @@ void continue_scan () {
 }
 
 
-void start_scan () {
+static void start_scan () {
     NVIC_EnableIRQ(TIMER0_IRQn);
 
     radio_init(39); // set channel to only use 39
@@ -304,7 +254,7 @@ void start_scan () {
 }
 
 
-void send_advertisement () {
+static void send_advertisement () {
     radio_disable();
     radio_init(39);
     radio_buffer_configure((uint8_t*) &advertisement);
@@ -312,19 +262,12 @@ void send_advertisement () {
 }
 
 
-// Keep track of unique flood id for this node
-uint8_t _my_flood_counter = 0;
 
 
-// How many floods we are currently seeing
-_current_flood_count = 0;
 
-
-// // The ID of the node that started the last flood.
-// uint32_t _last_initiator = 0;
-// // The ID of the flood from that initiator. We need both because
-// // the same node could start two consecutive floods.
-// uint8_t _last_flood_id = 0xff;
+/*******************************************************************************
+ * Keep track of a little bit of history
+ ******************************************************************************/
 
 // Circular buffers to keep track of recent floods.
 // We keep more than one because it's conceivable we get a packet about
@@ -334,7 +277,7 @@ uint32_t known_flood_initiators[KNOWN_FLOOD_BUFFER_LEN] = {0};
 uint8_t known_flood_initiators_ids[KNOWN_FLOOD_BUFFER_LEN] = {0};
 uint8_t known_flood_head = 0;
 
-bool flood_id_is_new (uint32_t id, uint8_t flood_id) {
+static bool flood_id_is_new (uint32_t id, uint8_t flood_id) {
     uint8_t i;
 
     for (i=0; i<KNOWN_FLOOD_BUFFER_LEN; i++) {
@@ -348,7 +291,7 @@ bool flood_id_is_new (uint32_t id, uint8_t flood_id) {
     return true;
 }
 
-void flood_id_record (uint32_t id, uint8_t flood_id) {
+static void flood_id_record (uint32_t id, uint8_t flood_id) {
     uint8_t i;
     bool updated = false;
 
@@ -371,7 +314,25 @@ void flood_id_record (uint32_t id, uint8_t flood_id) {
 }
 
 
-void flood_leds (uint8_t flood_count) {
+/*******************************************************************************
+ * Flooding functions
+ ******************************************************************************/
+
+static void led_iterate () {
+    static uint8_t state = 0;
+
+    state += 1;
+    if (state > 0x0F) {
+        state = 0;
+    }
+
+    if (state & 0x1) led_off(LED1); else led_on(LED1);
+    if (state & 0x2) led_off(LED2); else led_on(LED2);
+    if (state & 0x4) led_off(LED4); else led_on(LED4);
+    if (state & 0x8) led_off(LED3); else led_on(LED3);
+}
+
+static void flood_leds (uint8_t flood_count) {
     if (flood_count == 1) {
         led_off(LED2);
         led_off(LED4);
@@ -391,13 +352,13 @@ void flood_leds (uint8_t flood_count) {
 }
 
 // Convert RSSI to a delay in app timer ticks.
-uint32_t rssi_to_ticks (int8_t rssi) {
+static uint32_t rssi_to_ticks (int8_t rssi) {
     if (rssi <= -80) return APP_TIMER_TICKS(5, 0); // 5 ms
     if (rssi >= 0) return APP_TIMER_TICKS(100, 0); // 100 ms
     return APP_TIMER_TICKS(((99*((int16_t)rssi)) / 80) + 100, 0);
 }
 
-void start_flood () {
+static void start_flood () {
     // Check how many floods we are a part of.
     // If we are already at the limit, we can't start another
     if (_current_flood_count < 3) {
@@ -412,7 +373,7 @@ void start_flood () {
         app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
-        advertisement.manuf.packet_type == SHOES_PKT_TYPE_FLOOD;
+        advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
         _my_flood_counter++;
         advertisement.manuf.data[0] = _my_flood_counter;
         // Also include that we are the ones who started it
@@ -425,7 +386,7 @@ void start_flood () {
     }
 }
 
-void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
+static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
     // Check how many floods we are a part of.
     // If we are already at the limit, we can't start another
     if (_current_flood_count < 3) {
@@ -440,7 +401,7 @@ void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
         app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
-        advertisement.manuf.packet_type == SHOES_PKT_TYPE_FLOOD;
+        advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
         _my_flood_counter++;
         advertisement.manuf.data[0] = flood_id;
         // Also include the node that started this particular flood
@@ -455,18 +416,9 @@ void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
 }
 
 
-// void relay_flood_packet (int8_t rssi) {
-
-// }
-
-// typedef enum {
-//     SHOES_STATE_IDLE,
-//     SHOES_STATE_FLOOD1,
-//     SHOES_STATE_FLOOD2,
-//     SHOES_STATE_FLOOD3
-// } shoes_state_e;
-
-// shoes_state_e _state = SHOES_STATE_IDLE;
+/*******************************************************************************
+ * Callbacks
+ ******************************************************************************/
 
 
 void rx_callback (bool crc_valid) {
@@ -573,13 +525,13 @@ void rx_callback (bool crc_valid) {
     continue_scan();
 }
 
-
+// This is called after a packet is transmitted. We want to
+// go right back to listening.
 void tx_callback () {
     start_scan();
 }
 
-
-
+// Called as a part of the timeslot API from the softdevice.
 nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
     switch (sig) {
         case NRF_RADIO_CALLBACK_SIGNAL_TYPE_START:
@@ -591,7 +543,6 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 
             // Scan baby scan!
             start_scan();
-            // send_advertisement();
 
             m_signal_callback_return_param.callback_action = NRF_RADIO_SIGNAL_CALLBACK_ACTION_NONE;
             break;
@@ -617,11 +568,14 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 
 
 
-
+// This timer callback occurs when we should transmit a packet to
+// keep propagating a flood a different node started.
 static void timer_flood_retransmission_callback (void* context) {
     send_advertisement();
 }
 
+// This timer callback happens to effectively end a flood
+// at this node by turning off all LEDs
 static void timer_flood_end_callback (void* context) {
     // Turn off all LEDs if flood has ended
     led_on(LED1);
@@ -633,7 +587,7 @@ static void timer_flood_end_callback (void* context) {
     _current_flood_count = 0;
 }
 
-
+// Interrupt handler for button and accelerometer
 static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
@@ -656,27 +610,36 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     }
 }
 
-/******************************************************************************/
-/* Init functions
+/*******************************************************************************
+ * Init functions
  ******************************************************************************/
 
 static void ble_stack_init () {
     uint32_t err_code;
 
+    nrf_clock_lf_cfg_t clock_lf_cfg = {
+        .source        = NRF_CLOCK_LF_SRC_RC,
+        .rc_ctiv       = 16, // bradjc: I mostly made these up based on docs. May be not great.
+        .rc_temp_ctiv  = 2,
+        .xtal_accuracy = NRF_CLOCK_LF_XTAL_ACCURACY_250_PPM};
+
     // Initialize the SoftDevice handler module.
-    SOFTDEVICE_HANDLER_INIT(NRF_CLOCK_LFCLKSRC_RC_250_PPM_TEMP_4000MS_CALIBRATION, NULL);
+    SOFTDEVICE_HANDLER_INIT(&clock_lf_cfg, NULL);
+
+    // Initialize the SoftDevice handler module.
+    // SOFTDEVICE_HANDLER_INIT(NRF_CLOCK_LFCLKSRC_RC_250_PPM_TEMP_4000MS_CALIBRATION, NULL);
 
     ble_enable_params_t ble_enable_params;
     // Need these #defines. C is the worst.
-    #define CENTRAL_LINK_COUNT    2
+    #define CENTRAL_LINK_COUNT    1
     #define PERIPHERAL_LINK_COUNT 1
-    err_code = softdevice_enable_get_default_config(2, // central link count
+    err_code = softdevice_enable_get_default_config(1, // central link count
                                                     1, // peripheral link count
                                                     &ble_enable_params);
     APP_ERROR_CHECK(err_code);
 
     //Check the ram settings against the used number of links
-    CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT,PERIPHERAL_LINK_COUNT);
+    CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT);
 
     // Enable BLE stack.
     err_code = softdevice_enable(&ble_enable_params);
@@ -691,7 +654,7 @@ static void ble_stack_init () {
     APP_ERROR_CHECK(err_code);
 }
 
-void accelerometer_init () {
+static void accelerometer_init () {
     uint32_t err;
 
     // Configure the accel hardware
