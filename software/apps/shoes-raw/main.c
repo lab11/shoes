@@ -370,6 +370,7 @@ static void start_flood () {
         flood_leds(_current_flood_count);
 
         // Set a timer to turn off the LEDs after the flood is over
+        app_timer_stop(timer_flood_end);
         app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
@@ -398,6 +399,7 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
         flood_leds(_current_flood_count);
 
         // Set a timer to turn off the LEDs after the flood is over
+        app_timer_stop(timer_flood_end);
         app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
@@ -471,9 +473,9 @@ void rx_callback (bool crc_valid) {
 
                         // Extract the lower 3 bytes of the ID from the node
                         // that started the flood
-                        uint32_t id = (((uint32_t) inadv->manuf.data[1]) << 0) |
+                        uint32_t id = (((uint32_t) inadv->manuf.data[3]) << 0) |
                                       (((uint32_t) inadv->manuf.data[2]) << 8) |
-                                      (((uint32_t) inadv->manuf.data[3]) << 16);
+                                      (((uint32_t) inadv->manuf.data[1]) << 16);
 
                         // Decide if we have seen this flood before.
                         // If we haven't we can respond properly. If we have,
@@ -589,6 +591,7 @@ static void timer_flood_end_callback (void* context) {
 
 // Interrupt handler for button and accelerometer
 static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
+    // led_toggle(LED0);
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
         // led_toggle(LED0);
@@ -606,7 +609,8 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     if (pins_l2h & (1 << BUTTON_INTERRUPT_PIN)) {
         // Button press
         // led_toggle(LED0);
-        led_iterate();
+        // led_iterate();
+        start_flood();
     }
 }
 
@@ -619,15 +623,12 @@ static void ble_stack_init () {
 
     nrf_clock_lf_cfg_t clock_lf_cfg = {
         .source        = NRF_CLOCK_LF_SRC_RC,
-        .rc_ctiv       = 16, // bradjc: I mostly made these up based on docs. May be not great.
-        .rc_temp_ctiv  = 2,
-        .xtal_accuracy = NRF_CLOCK_LF_XTAL_ACCURACY_250_PPM};
+        .rc_ctiv       = 4, // bradjc: I mostly made these up based on docs. May be not great.
+        .rc_temp_ctiv  = 0,
+        .xtal_accuracy = NRF_CLOCK_LF_XTAL_ACCURACY_100_PPM};
 
     // Initialize the SoftDevice handler module.
     SOFTDEVICE_HANDLER_INIT(&clock_lf_cfg, NULL);
-
-    // Initialize the SoftDevice handler module.
-    // SOFTDEVICE_HANDLER_INIT(NRF_CLOCK_LFCLKSRC_RC_250_PPM_TEMP_4000MS_CALIBRATION, NULL);
 
     ble_enable_params_t ble_enable_params;
     // Need these #defines. C is the worst.
@@ -657,35 +658,6 @@ static void ble_stack_init () {
 static void accelerometer_init () {
     uint32_t err;
 
-    // Configure the accel hardware
-    adxl362_accelerometer_init(&_spi, adxl362_NOISE_NORMAL, true, false, false);
-
-    uint16_t act_thresh = 0x0222;
-    adxl362_set_activity_threshold(act_thresh);
-    uint16_t inact_thresh = 0x0096;
-    adxl362_set_inactivity_threshold(inact_thresh);
-
-    uint8_t a_time = 4;
-    adxl362_set_activity_time(a_time);
-    uint8_t ia_time = 30;
-    adxl362_set_inactivity_time(ia_time);
-
-    adxl362_interrupt_map_t intmap_2;
-
-    intmap_2.DATA_READY = 0;
-    intmap_2.FIFO_READY = 0;
-    intmap_2.FIFO_WATERMARK = 0;
-    intmap_2.FIFO_OVERRUN = 0;
-    intmap_2.ACT = 0;
-    intmap_2.INACT = 0;
-    intmap_2.AWAKE = 1;
-    intmap_2.INT_LOW = 1;
-    adxl362_config_INTMAP(&intmap_2, true);
-
-    adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, true , true);
-    adxl362_activity_inactivity_interrupt_enable();
-
-    adxl362_read_status_reg();
 
     // Configure the accelerometer interrupt
 
@@ -694,17 +666,56 @@ static void accelerometer_init () {
 
     // Register the accelerometer
     err = app_gpiote_user_register(&gpiote_user_acc,
-                             // (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
-                             (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
-                             // (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
-                             // 1<<ACCELEROMETER_INTERRUPT_PIN,   // Which pins we want the interrupt for high to low
-                             // 1<<BUTTON_INTERRUPT_PIN,   // Which pins we want the interrupt for high to low
-                             (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
-                             interrupt_handler);
+        (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+        (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
+        interrupt_handler);
 
     if (err != NRF_SUCCESS) {
         led_on(LED0);
     }
+
+
+
+    // Configure the accel hardware
+    adxl362_accelerometer_init(&_spi, adxl362_NOISE_NORMAL, false, false, false);
+
+    uint16_t act_thresh = 0x222;
+    // uint16_t act_thresh = 0x0020;
+    adxl362_set_activity_threshold(act_thresh);
+    uint16_t inact_thresh = 0x00c6;
+    adxl362_set_inactivity_threshold(inact_thresh);
+
+    // uint8_t a_time = 4;
+    uint8_t a_time = 1;
+    adxl362_set_activity_time(a_time);
+    uint8_t ia_time = 30;
+    adxl362_set_inactivity_time(ia_time);
+
+    adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, true , true);
+    // adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, false , false);
+    adxl362_activity_inactivity_interrupt_enable();
+
+    adxl362_interrupt_map_t intmap_2;
+
+    intmap_2.DATA_READY = 0;
+    intmap_2.FIFO_READY = 0;
+    intmap_2.FIFO_WATERMARK = 0;
+    intmap_2.FIFO_OVERRUN = 0;
+    intmap_2.ACT     = 0;
+    intmap_2.INACT   = 0;
+    intmap_2.AWAKE   = 1;
+    intmap_2.INT_LOW = 1;
+    adxl362_config_INTMAP(&intmap_2, true);
+
+
+
+    adxl362_autosleep();
+
+    adxl362_measurement_mode();
+
+    adxl362_read_status_reg();
+
+
 
     // Enable the interrupt!
     err = app_gpiote_user_enable(gpiote_user_acc);
