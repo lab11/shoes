@@ -12,6 +12,8 @@
 #include "app_gpiote.h"
 #include "nrf_delay.h"
 
+#include "bootloader_types.h"
+
 #include "radio.h"
 
 #include "led.h"
@@ -149,6 +151,32 @@ void assert_nrf_callback (uint16_t line_num, const uint8_t * p_file_name) {
 
 
 /*******************************************************************************
+ * DFU Helper Stuff
+ ******************************************************************************/
+
+#define IRQ_ENABLED               0x01
+#define MAX_NUMBER_INTERRUPTS     32
+#define BOOTLOADER_BLE_ADDR_START 0x20007F80
+
+static void interrupts_disable(void) {
+    uint32_t interrupt_setting_mask;
+    uint32_t irq = 0; // We start from first interrupt, i.e. interrupt 0.
+
+    // Fetch the current interrupt settings.
+    interrupt_setting_mask = NVIC->ISER[0];
+
+    for (; irq < MAX_NUMBER_INTERRUPTS; irq++) {
+        if (interrupt_setting_mask & (IRQ_ENABLED << irq)) {
+            // The interrupt was enabled, and hence disable it.
+            NVIC_DisableIRQ((IRQn_Type)irq);
+        }
+    }
+}
+
+bool pending_dfu = false;
+
+
+/*******************************************************************************
  * System functions
  ******************************************************************************/
 
@@ -206,13 +234,35 @@ void timeslot_sys_event_handler (uint32_t evt) {
     switch (evt) {
       case NRF_EVT_RADIO_SESSION_IDLE:
       case NRF_EVT_RADIO_BLOCKED:
-        // Request a new timeslot
-        err_code = sd_radio_request(&m_timeslot_req_earliest);
-        APP_ERROR_CHECK(err_code);
+        // // Request a new timeslot
+        // err_code = sd_radio_request(&m_timeslot_req_earliest);
+        // APP_ERROR_CHECK(err_code);
+
+        // If we ever get here, we canceled our timeslots. The only reason
+        // we do that is if we want to go into bootloader mode.
+        sd_radio_session_close();
         break;
 
       case NRF_EVT_RADIO_SESSION_CLOSED:
-        break;
+
+            // If we get to session closed, we want to enter the bootloader
+
+            // These steps from dfu_app_handler.c
+            err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
+            APP_ERROR_CHECK(err_code);
+
+            err_code = sd_softdevice_disable();
+            APP_ERROR_CHECK(err_code);
+
+            err_code = sd_softdevice_vector_table_base_set(NRF_UICR->BOOTLOADERADDR);
+            APP_ERROR_CHECK(err_code);
+
+            NVIC_ClearPendingIRQ(SWI2_IRQn);
+            interrupts_disable();
+
+            bootloader_util_app_start(NRF_UICR->BOOTLOADERADDR);
+
+            break;
 
       case NRF_EVT_RADIO_SIGNAL_CALLBACK_INVALID_RETURN:
         // ASSERT(false);
@@ -484,6 +534,28 @@ void rx_callback (bool crc_valid) {
                     break;
             }
 
+        } else {
+            // check for DFU packet.
+            int i;
+
+
+            for (i=0; i<RX_BUF_SIZE-5; i++) {
+                if (m_rx_buf[i] == 0xff &&
+                    m_rx_buf[i+1] == 0xe0 &&
+                    m_rx_buf[i+2] == 0x02 &&
+                    m_rx_buf[i+3] == 0x16 && // DFU umich man fac data type
+                    m_rx_buf[i+4] == 0x01    // version 1
+                    ) {
+                    // This looks like a DFU reset packet.
+                    // Now determine if this was targeted at us.
+                    if (memcmp(m_rx_buf+i+5, (uint8_t*) BLEADDR_FLASH_LOCATION, 6) == 0) {
+
+
+                        // It was!
+                        pending_dfu = true;
+                    }
+                }
+            }
         }
 
     }
@@ -498,6 +570,16 @@ void tx_callback () {
 
 // Called as a part of the timeslot API from the softdevice.
 nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
+
+    if (pending_dfu) {
+        uint32_t err_code;
+        pending_dfu = false;
+
+        // When we want to go to DFU mode, we just give up our timeslot
+        m_signal_callback_return_param.callback_action = NRF_RADIO_SIGNAL_CALLBACK_ACTION_END;
+        return &m_signal_callback_return_param;
+    }
+
     switch (sig) {
         case NRF_RADIO_CALLBACK_SIGNAL_TYPE_START:
             // Setup a timer so we know when our timeslot is up

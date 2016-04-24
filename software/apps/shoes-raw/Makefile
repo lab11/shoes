@@ -24,7 +24,9 @@ SOFTDEVICE_MODEL = s130
 
 RAM_KB = 32
 SDK_VERSION = 11
-CFLAGS += -DDEBUG=1
+CFLAGS += -DDEBUG=1 -Os
+
+ENABLE_WIRELESS_DFU = 1
 
 LIBRARY_PATHS += . ../../include btle_hci/scanner/include
 SOURCE_PATHS += ../../src btle_hci/scanner
