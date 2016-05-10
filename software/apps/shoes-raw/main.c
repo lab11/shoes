@@ -37,7 +37,10 @@
 
 #define FLOOD_DURATION APP_TIMER_TICKS(400, 0)
 
+// Something for button API
 #define BUTTON_DETECTION_DELAY   APP_TIMER_TICKS(50, 0)
+
+// How long a long press is defined to be, in ms
 #define BUTTON_LONG_PRESS_LENGTH APP_TIMER_TICKS(1500, 0)
 
 // Types of packets in the Shoes! protocol
@@ -142,8 +145,10 @@ typedef enum {
 // Board defaults to off
 static shoes_state_e _shoes_state = STATE_OFF;
 
+// Which color our floods will be.
 static int _my_color;
 
+// State for setting up the button
 static void button_handler (uint8_t button, uint8_t action);
 static app_button_cfg_t buttons[] = {
     {BUTTON_INTERRUPT_PIN, APP_BUTTON_ACTIVE_HIGH, NRF_GPIO_PIN_NOPULL, button_handler}
@@ -152,10 +157,7 @@ static app_button_cfg_t buttons[] = {
 // Timer for measuring button press event length
 APP_TIMER_DEF(timer_button_press);
 
-// Times when button events occurred in counted ticks
-// static uint32_t _count_at_button_press;
-// static uint32_t _count_at_button_release;
-
+// After a long button press we may want to ignore the button release
 static bool _ignore_button_release = false;
 
 /*******************************************************************************
@@ -262,10 +264,6 @@ void timeslot_sys_event_handler (uint32_t evt) {
     switch (evt) {
       case NRF_EVT_RADIO_SESSION_IDLE:
       case NRF_EVT_RADIO_BLOCKED:
-        // // Request a new timeslot
-        // err_code = sd_radio_request(&m_timeslot_req_earliest);
-        // APP_ERROR_CHECK(err_code);
-
         // If we ever get here, we canceled our timeslots. This could mean
         // we want to go to the bootloader, or this could me we turned off
         sd_radio_session_close();
@@ -273,30 +271,8 @@ void timeslot_sys_event_handler (uint32_t evt) {
 
       case NRF_EVT_RADIO_SESSION_CLOSED: {
 
-            // If we get to session closed, we want to enter the bootloader
-
+            // If we get to session closed, we may want to enter the bootloader
             if (pending_dfu) {
-
-
-
-            // static bootloader_settings_t  settings;
-            // // const bootloader_settings_t * p_bootloader_settings;
-
-            // // bootloader_util_settings_get(&p_bootloader_settings);
-
-            // // if (update_status.status_code == DFU_UPDATE_APP_COMPLETE)
-            // // {
-            //     settings.bank_0_crc  = 0;
-            //     settings.bank_0_size = 0;
-            //     settings.bank_0      = BANK_INVALID_APP;
-            //     settings.bank_1      = BANK_INVALID_APP;
-
-            //     // m_update_status      = BOOTLOADER_SETTINGS_SAVING;
-            //     bootloader_settings_save(&settings);
-
-            //     NVIC_SystemReset();
-
-
                 // These steps from dfu_app_handler.c
                 err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
                 APP_ERROR_CHECK(err_code);
@@ -760,56 +736,29 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
     led_toggle(LED0);
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
-        // led_toggle(LED0);
-        // led_iterate();
 
-        // me.seq++;
-        // adv_init(&me);
-        // advertising_start();
-        // app_timer_start(app_timer, APP_TIMER_TICKS(4000, 0), NULL);
-        // send_advertisement();
+        // Only do a flood if we are not off
         if (_shoes_state != STATE_OFF) {
             start_flood();
         }
     }
-
-    // Button was pressed
-    // if (pins_l2h & (1 << BUTTON_INTERRUPT_PIN)) {
-    //     // Button press
-    //     // led_toggle(LED0);
-    //     // led_iterate();
-    //     start_flood();
-    // }
 }
 
 static void button_handler (uint8_t button, uint8_t action) {
-    uint32_t err_code;
     switch(action) {
         case APP_BUTTON_PUSH:
+            // Start a timer to detect a long press. This is used to turn
+            // the module off.
             app_timer_start(timer_button_press, BUTTON_LONG_PRESS_LENGTH, NULL);
-            // app_timer_cnt_get(&_count_at_button_press);
             break;
 
         case APP_BUTTON_RELEASE: {
-            uint32_t count_duration;
-            // app_timer_cnt_get(&_count_at_button_release);
-            err_code = app_timer_stop(timer_button_press);
-            // app_timer_cnt_diff_compute(_count_at_button_release, _count_at_button_press, &count_duration);
+            // Can cancel the timer if it is still running
+            app_timer_stop(timer_button_press);
 
             // Only do something if the timer didn't fire. If it fired we
             // want to turn off and have already handled that.
             if (!_ignore_button_release) {
-
-
-            // if (count_duration > BUTTON_LONG_PRESS_LENGTH) {
-            //     // Go to off state
-            //     _shoes_state = STATE_OFF;
-
-            //     // Display "off" pattern
-            //     ui_off();
-
-            // } else {
-                // Either turn on or switch color
 
                 switch (_shoes_state) {
                     case STATE_OFF:
@@ -846,6 +795,7 @@ static void button_handler (uint8_t button, uint8_t action) {
 
             }
 
+            // We want the next button press
             _ignore_button_release = false;
 
             break;
@@ -898,7 +848,6 @@ static void ble_stack_init () {
 static void accelerometer_init () {
     uint32_t err;
 
-
     // Configure the accelerometer interrupt
 
     // Need one user: accelerometer
@@ -908,14 +857,11 @@ static void accelerometer_init () {
     err = app_gpiote_user_register(&gpiote_user_acc,
         (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
         (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
-        // (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
-        // (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
         interrupt_handler);
 
     if (err != NRF_SUCCESS) {
         led_on(LED0);
     }
-
 
 
     // Configure the accel hardware
@@ -1011,16 +957,7 @@ int main () {
     // Need to setup our accelerometer
     accelerometer_init();
 
-    // Create a session for doing timeslots
-    // err_code = sd_radio_session_open(radio_cb);
-    // APP_ERROR_CHECK(err_code);
-
-    // Start in OFF state
-    // // Request a timeslot
-    // err_code = sd_radio_request(&m_timeslot_req_earliest);
-    // APP_ERROR_CHECK(err_code);
-
-    // Enter main loop.
+    // Enter main loop and essentially wait for button press
     while (1) {
         power_manage();
     }
