@@ -243,9 +243,29 @@ void timeslot_sys_event_handler (uint32_t evt) {
         sd_radio_session_close();
         break;
 
-      case NRF_EVT_RADIO_SESSION_CLOSED:
+      case NRF_EVT_RADIO_SESSION_CLOSED: {
 
             // If we get to session closed, we want to enter the bootloader
+
+
+
+            // static bootloader_settings_t  settings;
+            // // const bootloader_settings_t * p_bootloader_settings;
+
+            // // bootloader_util_settings_get(&p_bootloader_settings);
+
+            // // if (update_status.status_code == DFU_UPDATE_APP_COMPLETE)
+            // // {
+            //     settings.bank_0_crc  = 0;
+            //     settings.bank_0_size = 0;
+            //     settings.bank_0      = BANK_INVALID_APP;
+            //     settings.bank_1      = BANK_INVALID_APP;
+
+            //     // m_update_status      = BOOTLOADER_SETTINGS_SAVING;
+            //     bootloader_settings_save(&settings);
+
+            //     NVIC_SystemReset();
+
 
             // These steps from dfu_app_handler.c
             err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
@@ -263,6 +283,7 @@ void timeslot_sys_event_handler (uint32_t evt) {
             bootloader_util_app_start(NRF_UICR->BOOTLOADERADDR);
 
             break;
+        }
 
       case NRF_EVT_RADIO_SIGNAL_CALLBACK_INVALID_RETURN:
         // ASSERT(false);
