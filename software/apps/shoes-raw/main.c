@@ -820,6 +820,7 @@ static void button_handler (uint8_t button, uint8_t action) {
                         ui_color1();
 
                         // Call this to start the main RX loop
+                        sd_radio_session_open(radio_cb);
                         sd_radio_request(&m_timeslot_req_earliest);
 
                         break;
@@ -1013,8 +1014,8 @@ int main () {
     accelerometer_init();
 
     // Create a session for doing timeslots
-    err_code = sd_radio_session_open(radio_cb);
-    APP_ERROR_CHECK(err_code);
+    // err_code = sd_radio_session_open(radio_cb);
+    // APP_ERROR_CHECK(err_code);
 
     // Start in OFF state
     // // Request a timeslot
