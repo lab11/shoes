@@ -757,7 +757,7 @@ static void timer_button_press_callback (void* context) {
 
 // Interrupt handler for button and accelerometer
 static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
-    // led_toggle(LED0);
+    led_toggle(LED0);
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
         // led_toggle(LED0);
@@ -768,8 +768,9 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
         // advertising_start();
         // app_timer_start(app_timer, APP_TIMER_TICKS(4000, 0), NULL);
         // send_advertisement();
-
-        start_flood();
+        if (_shoes_state != STATE_OFF) {
+            start_flood();
+        }
     }
 
     // Button was pressed
@@ -979,13 +980,10 @@ int main () {
 
     // These are active high...go figure
     led_init(LED1);
-    led_on(LED1);
     led_init(LED2);
-    led_on(LED2);
     led_init(LED3);
-    led_on(LED3);
     led_init(LED4);
-    led_on(LED4);
+    leds_off();
 
     // Essentially initialize soft device
     ble_stack_init();
