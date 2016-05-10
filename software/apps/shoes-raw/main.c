@@ -7,6 +7,7 @@
 #include "app_error.h"
 #include "softdevice_handler.h"
 #include "app_timer.h"
+#include "app_button.h"
 #include "app_util.h"
 #include "nrf_drv_spi.h"
 #include "app_gpiote.h"
@@ -34,8 +35,10 @@
 #define TIMESLOT_DISTANCE_US 100000
 #define TIMESLOT_TIMEOUT_US 200000
 
-#define FLOOD_DURATION APP_TIMER_TICKS(5000, 0)
+#define FLOOD_DURATION APP_TIMER_TICKS(400, 0)
 
+#define BUTTON_DETECTION_DELAY   APP_TIMER_TICKS(50, 0)
+#define BUTTON_LONG_PRESS_LENGTH APP_TIMER_TICKS(1500, 0)
 
 // Types of packets in the Shoes! protocol
 #define SHOES_PKT_TYPE_FLOOD 0x01  // Start or continue a flood
@@ -129,6 +132,31 @@ advertisement_t advertisement = {
     .name = {7, 0x09, 0x53, 0x48, 0x4f, 0x45, 0x53, 0x21}
 };
 
+
+typedef enum {
+    STATE_OFF,
+    STATE_COLOR1,
+    STATE_COLOR2
+} shoes_state_e;
+
+// Board defaults to off
+static shoes_state_e _shoes_state = STATE_OFF;
+
+static int _my_color;
+
+static void button_handler (uint8_t button, uint8_t action);
+static app_button_cfg_t buttons[] = {
+    {BUTTON_INTERRUPT_PIN, APP_BUTTON_ACTIVE_HIGH, NRF_GPIO_PIN_NOPULL, button_handler}
+};
+
+// Timer for measuring button press event length
+APP_TIMER_DEF(timer_button_press);
+
+// Times when button events occurred in counted ticks
+// static uint32_t _count_at_button_press;
+// static uint32_t _count_at_button_release;
+
+static bool _ignore_button_release = false;
 
 /*******************************************************************************
  * Function signatures
@@ -238,14 +266,16 @@ void timeslot_sys_event_handler (uint32_t evt) {
         // err_code = sd_radio_request(&m_timeslot_req_earliest);
         // APP_ERROR_CHECK(err_code);
 
-        // If we ever get here, we canceled our timeslots. The only reason
-        // we do that is if we want to go into bootloader mode.
+        // If we ever get here, we canceled our timeslots. This could mean
+        // we want to go to the bootloader, or this could me we turned off
         sd_radio_session_close();
         break;
 
       case NRF_EVT_RADIO_SESSION_CLOSED: {
 
             // If we get to session closed, we want to enter the bootloader
+
+            if (pending_dfu) {
 
 
 
@@ -267,20 +297,21 @@ void timeslot_sys_event_handler (uint32_t evt) {
             //     NVIC_SystemReset();
 
 
-            // These steps from dfu_app_handler.c
-            err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
-            APP_ERROR_CHECK(err_code);
+                // These steps from dfu_app_handler.c
+                err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
+                APP_ERROR_CHECK(err_code);
 
-            err_code = sd_softdevice_disable();
-            APP_ERROR_CHECK(err_code);
+                err_code = sd_softdevice_disable();
+                APP_ERROR_CHECK(err_code);
 
-            err_code = sd_softdevice_vector_table_base_set(NRF_UICR->BOOTLOADERADDR);
-            APP_ERROR_CHECK(err_code);
+                err_code = sd_softdevice_vector_table_base_set(NRF_UICR->BOOTLOADERADDR);
+                APP_ERROR_CHECK(err_code);
 
-            NVIC_ClearPendingIRQ(SWI2_IRQn);
-            interrupts_disable();
+                NVIC_ClearPendingIRQ(SWI2_IRQn);
+                interrupts_disable();
 
-            bootloader_util_app_start(NRF_UICR->BOOTLOADERADDR);
+                bootloader_util_app_start(NRF_UICR->BOOTLOADERADDR);
+            }
 
             break;
         }
@@ -388,6 +419,66 @@ static void flood_id_record (uint32_t id, uint8_t flood_id) {
 /*******************************************************************************
  * Flooding functions
  ******************************************************************************/
+
+static void leds_off () {
+    led_on(LED1);
+    led_on(LED3);
+    led_on(LED2);
+    led_on(LED4);
+}
+
+static void leds_color1 () {
+    led_off(LED2);
+    led_off(LED4);
+    led_on(LED1);
+    led_on(LED3);
+}
+
+static void leds_color2 () {
+    led_off(LED1);
+    led_off(LED3);
+    led_on(LED2);
+    led_on(LED4);
+}
+
+static void leds_both () {
+    led_off(LED1);
+    led_off(LED3);
+    led_off(LED2);
+    led_off(LED4);
+}
+
+static void ui_off () {
+    // Turn all LEDs on
+    led_on(LED0);
+    leds_both();
+    nrf_delay_ms(500);
+
+    // Turn off one side
+    led_on(LED1);
+    led_on(LED2);
+    nrf_delay_ms(500);
+
+    // Turn off other side
+    led_on(LED3);
+    led_on(LED4);
+    nrf_delay_ms(500);
+
+    // Turn off blue
+    led_off(LED0);
+}
+
+static void ui_color1 () {
+    leds_color1();
+    nrf_delay_ms(1000);
+    leds_off();
+}
+
+static void ui_color2 () {
+    leds_color2();
+    nrf_delay_ms(1000);
+    leds_off();
+}
 
 static void led_iterate () {
     static uint8_t state = 0;
@@ -592,9 +683,10 @@ void tx_callback () {
 // Called as a part of the timeslot API from the softdevice.
 nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 
-    if (pending_dfu) {
+    // If we want to go to the bootloader or we want to turn
+    // off we hit this state.
+    if (pending_dfu || _shoes_state == STATE_OFF) {
         uint32_t err_code;
-        pending_dfu = false;
 
         // When we want to go to DFU mode, we just give up our timeslot
         m_signal_callback_return_param.callback_action = NRF_RADIO_SIGNAL_CALLBACK_ACTION_END;
@@ -646,13 +738,21 @@ static void timer_flood_retransmission_callback (void* context) {
 // at this node by turning off all LEDs
 static void timer_flood_end_callback (void* context) {
     // Turn off all LEDs if flood has ended
-    led_on(LED1);
-    led_on(LED2);
-    led_on(LED3);
-    led_on(LED4);
+    leds_off();
 
     // Reset our flood state
     _current_flood_count = 0;
+}
+
+static void timer_button_press_callback (void* context) {
+    // We don't care when the button is unpressed now
+    _ignore_button_release = true;
+
+    // Go to off state
+    _shoes_state = STATE_OFF;
+
+    // Display "off" pattern
+    ui_off();
 }
 
 // Interrupt handler for button and accelerometer
@@ -672,11 +772,83 @@ static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
         start_flood();
     }
 
-    if (pins_l2h & (1 << BUTTON_INTERRUPT_PIN)) {
-        // Button press
-        // led_toggle(LED0);
-        // led_iterate();
-        start_flood();
+    // Button was pressed
+    // if (pins_l2h & (1 << BUTTON_INTERRUPT_PIN)) {
+    //     // Button press
+    //     // led_toggle(LED0);
+    //     // led_iterate();
+    //     start_flood();
+    // }
+}
+
+static void button_handler (uint8_t button, uint8_t action) {
+    uint32_t err_code;
+    switch(action) {
+        case APP_BUTTON_PUSH:
+            app_timer_start(timer_button_press, BUTTON_LONG_PRESS_LENGTH, NULL);
+            // app_timer_cnt_get(&_count_at_button_press);
+            break;
+
+        case APP_BUTTON_RELEASE: {
+            uint32_t count_duration;
+            // app_timer_cnt_get(&_count_at_button_release);
+            err_code = app_timer_stop(timer_button_press);
+            // app_timer_cnt_diff_compute(_count_at_button_release, _count_at_button_press, &count_duration);
+
+            // Only do something if the timer didn't fire. If it fired we
+            // want to turn off and have already handled that.
+            if (!_ignore_button_release) {
+
+
+            // if (count_duration > BUTTON_LONG_PRESS_LENGTH) {
+            //     // Go to off state
+            //     _shoes_state = STATE_OFF;
+
+            //     // Display "off" pattern
+            //     ui_off();
+
+            // } else {
+                // Either turn on or switch color
+
+                switch (_shoes_state) {
+                    case STATE_OFF:
+                        // We are currently off. Need to turn on and
+                        // choose a color.
+
+                        _shoes_state = STATE_COLOR1;
+                        _my_color = 1;
+                        ui_color1();
+
+                        // Call this to start the main RX loop
+                        sd_radio_request(&m_timeslot_req_earliest);
+
+                        break;
+
+                    case STATE_COLOR1:
+                        // Just need to update color
+                        _shoes_state = STATE_COLOR2;
+                        _my_color = 2;
+                        ui_color2();
+                        break;
+
+                    case STATE_COLOR2:
+                        // Just need to update color
+                        _shoes_state = STATE_COLOR1;
+                        _my_color = 1;
+                        ui_color1();
+                        break;
+
+                    default:
+                        break;
+                }
+
+            }
+
+            _ignore_button_release = false;
+
+            break;
+        }
+
     }
 }
 
@@ -732,8 +904,10 @@ static void accelerometer_init () {
 
     // Register the accelerometer
     err = app_gpiote_user_register(&gpiote_user_acc,
-        (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
-        (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
+        (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+        (1<<ACCELEROMETER_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
+        // (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for low to high
+        // (1<<ACCELEROMETER_INTERRUPT_PIN) | (1<<BUTTON_INTERRUPT_PIN),   // Which pins we want the interrupt for high to low
         interrupt_handler);
 
     if (err != NRF_SUCCESS) {
@@ -829,6 +1003,12 @@ int main () {
     app_timer_create(&timer_flood_retransmission, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_retransmission_callback);
     app_timer_create(&timer_flood_end, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_end_callback);
 
+    // Use nordics button api
+    app_button_init(buttons, 1, BUTTON_DETECTION_DELAY);
+    app_button_enable();
+    // Need to time the button press
+    app_timer_create(&timer_button_press, APP_TIMER_MODE_SINGLE_SHOT, timer_button_press_callback);
+
     // Need to setup our accelerometer
     accelerometer_init();
 
@@ -836,9 +1016,10 @@ int main () {
     err_code = sd_radio_session_open(radio_cb);
     APP_ERROR_CHECK(err_code);
 
-    // Request a timeslot
-    err_code = sd_radio_request(&m_timeslot_req_earliest);
-    APP_ERROR_CHECK(err_code);
+    // Start in OFF state
+    // // Request a timeslot
+    // err_code = sd_radio_request(&m_timeslot_req_earliest);
+    // APP_ERROR_CHECK(err_code);
 
     // Enter main loop.
     while (1) {
