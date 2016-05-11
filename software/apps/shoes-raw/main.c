@@ -564,7 +564,7 @@ static void start_flood () {
         app_timer_cnt_get(&_flood_timing_start);
 
         // // Set our LED to start the flood
-        leds_flood(_my_color);
+        // leds_flood(_my_color);
 
         // // Set a timer to turn off the LEDs after the flood is over
         // app_timer_stop(timer_flood_end);
@@ -790,26 +790,26 @@ static void timer_flood_tx_callback (void* context) {
 // This timer callback happens to effectively end a flood
 // at this node by turning off all LEDs
 static void timer_flood_led_callback (void* context) {
-    // switch (_led_state) {
-    //     case LED_STATE_OFF:
-    //         _led_state = LED_STATE_ON;
+    switch (_led_state) {
+        case LED_STATE_OFF:
+            _led_state = LED_STATE_ON;
 
-    //         // Turn LEDs on
-    //         leds_flood(_flood_color);
+            // Turn LEDs on
+            leds_flood(_flood_color);
 
-    //         // Reset this timer to turn LEDs off
-    //         app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
-    //         break;
+            // Reset this timer to turn LEDs off
+            app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
+            break;
 
-    //     case LED_STATE_ON:
-    //         _led_state = LED_STATE_OFF;
-    //         leds_off();
-    //         break;
-    // }
+        case LED_STATE_ON:
+            _led_state = LED_STATE_OFF;
+            leds_off();
+            break;
+    }
 
 
     // Turn off all LEDs if flood has ended
-    leds_off();
+    // leds_off();
 
     // Reset our flood state
     // _current_flood_count = 0;
