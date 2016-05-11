@@ -565,12 +565,7 @@ static void start_flood () {
         // app_timer_start(timer_timing, 65535, NULL);
         // app_timer_cnt_get(&_flood_timing_start);
 
-        // We don't set our LEDs for 300 ms
-        app_timer_stop(timer_flood_led);
-        app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
 
-        // Get the current time
-        app_timer_cnt_get(&_flood_timing_start);
 
         // // Set our LED to start the flood
         // leds_flood(_my_color);
@@ -595,11 +590,18 @@ static void start_flood () {
         advertisement.manuf.data[6] = advertisement.src_addr[1];
         advertisement.manuf.data[7] = advertisement.src_addr[0];
 
-        // Now spread the flood
-        _transmit_count = 0;
-        app_timer_stop(timer_flood_tx);
-        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
+        // // Now spread the flood
+        // _transmit_count = 0;
+        // app_timer_stop(timer_flood_tx);
+        // app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
         // send_advertisement();
+
+        // We don't set our LEDs for 300 ms
+        app_timer_stop(timer_flood_led);
+        app_timer_start(timer_flood_led, APP_TIMER_TICKS(2, 0), NULL);
+
+        // Get the current time
+        // app_timer_cnt_get(&_flood_timing_start);
     // }
 }
 
@@ -620,8 +622,8 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
         app_timer_stop(timer_flood_led);
         app_timer_start(timer_flood_led, APP_TIMER_TICKS(300-delay, 0), NULL);
 
-        // Get the current time
-        app_timer_cnt_get(&_flood_timing_start);
+        // // Get the current time
+        // app_timer_cnt_get(&_flood_timing_start);
 
         // Set a timer to turn off the LEDs after the flood is over
         // app_timer_stop(timer_flood_led);
@@ -631,10 +633,6 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
         advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
         // _my_flood_counter++;
         advertisement.manuf.data[0] = flood_id;
-        // // Also include the node that started this particular flood
-        // advertisement.manuf.data[1] = (initiator_id >> 16) & 0xFF;
-        // advertisement.manuf.data[2] = (initiator_id >> 8)  & 0xFF;
-        // advertisement.manuf.data[3] = (initiator_id >> 0)  & 0xFF;
         // Keep track of which hop this is
         advertisement.manuf.data[1] = hop_count+1;
         // // Also transmit which color we are
@@ -643,9 +641,14 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
         // advertisement.manuf.data[1] = advertisement.src_addr[2];
         // advertisement.manuf.data[2] = advertisement.src_addr[1];
         // advertisement.manuf.data[3] = advertisement.src_addr[0];
-        advertisement.manuf.data[5] = advertisement.src_addr[2];
-        advertisement.manuf.data[6] = advertisement.src_addr[1];
-        advertisement.manuf.data[7] = advertisement.src_addr[0];
+        // advertisement.manuf.data[5] = advertisement.src_addr[2];
+        // advertisement.manuf.data[6] = advertisement.src_addr[1];
+        // advertisement.manuf.data[7] = advertisement.src_addr[0];
+
+        // Also include the node that started this particular flood
+        advertisement.manuf.data[5] = (initiator_id >> 16) & 0xFF;
+        advertisement.manuf.data[6] = (initiator_id >> 8)  & 0xFF;
+        advertisement.manuf.data[7] = (initiator_id >> 0)  & 0xFF;
 
         // Now spread the flood based on RSSI. Lower RSSI means quicker
         // retransmit time.
@@ -835,6 +838,15 @@ static void timer_flood_led_callback (void* context) {
 
             // Reset this timer to turn LEDs off
             app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
+
+            // Get the current time
+            app_timer_cnt_get(&_flood_timing_start);
+
+            // Now spread the flood
+            _transmit_count = 0;
+            app_timer_stop(timer_flood_tx);
+            app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
+
             break;
 
         case LED_STATE_ON:
