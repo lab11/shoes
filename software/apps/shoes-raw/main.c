@@ -356,25 +356,29 @@ static void start_scan () {
 }
 
 
-// static uint16_t ticks_to_ms (uint32_t ticks) {
-//     return (uint16_t) ((ticks * ((0 + 1 ) * 1000)) / APP_TIMER_CLOCK_FREQ);
-// }
+static uint16_t ticks_to_ms (uint32_t ticks) {
+    return (uint16_t) ((ticks * ((0 + 1 ) * 1000)) / APP_TIMER_CLOCK_FREQ);
+}
 
 
 static void send_advertisement () {
-    // uint32_t now;
-    // uint32_t diff;
+    uint32_t now;
+    uint32_t diff;
 
     _transmit_count++;
 
     // Get current count so we know when this packet actually went out
-    // app_timer_cnt_get(&now);
-    // app_timer_cnt_diff_compute(now, _flood_timing_start, &diff);
+    app_timer_cnt_get(&now);
+    app_timer_cnt_diff_compute(now, _flood_timing_start, &diff);
 
     // Insert the ms offset into the outgoing packet
-    // uint16_t offset = ticks_to_ms(diff);
-    // advertisement.manuf.data[3] = offset & 0xFF;
-    // advertisement.manuf.data[4] = (offset >> 8) & 0xFF;
+    uint16_t offset = ticks_to_ms(diff);
+    advertisement.manuf.data[3] = offset & 0xFF;
+    advertisement.manuf.data[4] = (offset >> 8) & 0xFF;
+    // advertisement.manuf.data[1] = diff & 0xFF;
+    // advertisement.manuf.data[2] = (diff >> 8) & 0xFF;
+    // advertisement.manuf.data[3] = (diff >> 16) & 0xFF;
+    // advertisement.manuf.data[4] = (diff >> 24) & 0xFF;
 
     radio_disable();
     // radio_init(39);
@@ -580,16 +584,16 @@ static void start_flood () {
         _my_flood_counter++;
         advertisement.manuf.data[0] = _my_flood_counter;
         // Keep track of which hop this is
-        // advertisement.manuf.data[1] = 0;
+        advertisement.manuf.data[1] = 0;
         // // Also transmit which color we are
-        // advertisement.manuf.data[2] = _my_color;
+        advertisement.manuf.data[2] = _my_color;
         // Also include that we are the ones who started it
-        advertisement.manuf.data[1] = advertisement.src_addr[2];
-        advertisement.manuf.data[2] = advertisement.src_addr[1];
-        advertisement.manuf.data[3] = advertisement.src_addr[0];
-        // advertisement.manuf.data[5] = advertisement.src_addr[2];
-        // advertisement.manuf.data[6] = advertisement.src_addr[1];
-        // advertisement.manuf.data[7] = advertisement.src_addr[0];
+        // advertisement.manuf.data[1] = advertisement.src_addr[2];
+        // advertisement.manuf.data[2] = advertisement.src_addr[1];
+        // advertisement.manuf.data[3] = advertisement.src_addr[0];
+        advertisement.manuf.data[5] = advertisement.src_addr[2];
+        advertisement.manuf.data[6] = advertisement.src_addr[1];
+        advertisement.manuf.data[7] = advertisement.src_addr[0];
 
         // Now spread the flood
         _transmit_count = 0;
@@ -599,7 +603,7 @@ static void start_flood () {
     // }
 }
 
-static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
+static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, uint8_t hop_count, uint8_t color, uint16_t delay) {
     // Check how many floods we are a part of.
     // If we are already at the limit, we can't start another
     // if (_current_flood_count < 3) {
@@ -610,22 +614,46 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
         // Set our LED to start the flood
         // flood_leds(_current_flood_count);
 
-        // Set a timer to turn off the LEDs after the flood is over
+        _flood_color = color;
+
+        // We don't set our LEDs for 300 ms
         app_timer_stop(timer_flood_led);
-        app_timer_start(timer_flood_led, FLOOD_DURATION, NULL);
+        app_timer_start(timer_flood_led, APP_TIMER_TICKS(300-delay, 0), NULL);
+
+        // Get the current time
+        app_timer_cnt_get(&_flood_timing_start);
+
+        // Set a timer to turn off the LEDs after the flood is over
+        // app_timer_stop(timer_flood_led);
+        // app_timer_start(timer_flood_led, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
         advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
-        _my_flood_counter++;
+        // _my_flood_counter++;
         advertisement.manuf.data[0] = flood_id;
-        // Also include the node that started this particular flood
-        advertisement.manuf.data[1] = (initiator_id >> 16) & 0xFF;
-        advertisement.manuf.data[2] = (initiator_id >> 8)  & 0xFF;
-        advertisement.manuf.data[3] = (initiator_id >> 0)  & 0xFF;
+        // // Also include the node that started this particular flood
+        // advertisement.manuf.data[1] = (initiator_id >> 16) & 0xFF;
+        // advertisement.manuf.data[2] = (initiator_id >> 8)  & 0xFF;
+        // advertisement.manuf.data[3] = (initiator_id >> 0)  & 0xFF;
+        // Keep track of which hop this is
+        advertisement.manuf.data[1] = hop_count+1;
+        // // Also transmit which color we are
+        advertisement.manuf.data[2] = color;
+        // Also include that we are the ones who started it
+        // advertisement.manuf.data[1] = advertisement.src_addr[2];
+        // advertisement.manuf.data[2] = advertisement.src_addr[1];
+        // advertisement.manuf.data[3] = advertisement.src_addr[0];
+        advertisement.manuf.data[5] = advertisement.src_addr[2];
+        advertisement.manuf.data[6] = advertisement.src_addr[1];
+        advertisement.manuf.data[7] = advertisement.src_addr[0];
 
         // Now spread the flood based on RSSI. Lower RSSI means quicker
         // retransmit time.
-        app_timer_start(timer_flood_tx, rssi_to_ticks(rssi), NULL);
+        // app_timer_start(timer_flood_tx, rssi_to_ticks(rssi), NULL);
+
+        // _transmit_count = 0;
+        // app_timer_stop(timer_flood_tx);
+        // app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
     // }
 }
 
@@ -636,7 +664,7 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
 
 
 void rx_callback (bool crc_valid) {
-    return;
+    // return;
     if (crc_valid) {
         // led_toggle(LED0);
 
@@ -663,29 +691,32 @@ void rx_callback (bool crc_valid) {
 
                     // Decide if this flood was started by us. If so,
                     // we definitely want to ignore it.
-                    if (inadv->manuf.data[3] != advertisement.src_addr[0] ||
-                        inadv->manuf.data[3] != advertisement.src_addr[0] ||
-                        inadv->manuf.data[3] != advertisement.src_addr[0]) {
+                    if (inadv->manuf.data[5] != advertisement.src_addr[2] ||
+                        inadv->manuf.data[6] != advertisement.src_addr[1] ||
+                        inadv->manuf.data[7] != advertisement.src_addr[0]) {
 
                         // Get the per-flood-initiator unique id for this flood
                         uint8_t flood_id = inadv->manuf.data[0];
 
                         // Extract the lower 3 bytes of the ID from the node
                         // that started the flood
-                        uint32_t id = (((uint32_t) inadv->manuf.data[3]) << 0) |
-                                      (((uint32_t) inadv->manuf.data[2]) << 8) |
-                                      (((uint32_t) inadv->manuf.data[1]) << 16);
+                        uint32_t id = (((uint32_t) inadv->manuf.data[7]) << 0) |
+                                      (((uint32_t) inadv->manuf.data[6]) << 8) |
+                                      (((uint32_t) inadv->manuf.data[5]) << 16);
 
                         // Decide if we have seen this flood before.
                         // If we haven't we can respond properly. If we have,
                         // then we can just ignore this packet.
                         if (flood_id_is_new(id, flood_id)) {
+                            uint8_t hop_count = inadv->manuf.data[1];
+                            uint8_t color = inadv->manuf.data[2];
+                            uint16_t delay = inadv->manuf.data[3] | (((uint16_t) inadv->manuf.data[4]) << 8);
 
                             // Mark that we got this packet
                             flood_id_record(id, flood_id);
 
                             // Now join the flood.
-                            join_flood(rssi, id, flood_id);
+                            join_flood(rssi, id, flood_id, hop_count, color, delay);
 
                         }
                     }
