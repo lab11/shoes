@@ -103,8 +103,9 @@ typedef struct {
     uint8_t man_id2;
     uint8_t service_id;
     uint8_t packet_type;
-    // uint8_t data[8];
-    uint8_t data[4];
+    // uint8_t data[5];
+    uint8_t data[8];
+    // uint8_t data[4];
 } __attribute__((packed)) shoes_manuf_data_t;
 
 typedef struct {
@@ -121,20 +122,24 @@ typedef struct {
 advertisement_t advertisement = {
     .type_and_options = 0x02,  // ADV_NONCONN_IND
     // .type_and_options = 0x00,  // ADV_NONCONN_IND
-    // .length = 31,
-    .length = 27,
+    // .length = 28,
+    .length = 31,
+    // .length = 27,
     .s1 = 0,
     .src_addr = {0x00, 0x00, 0x00, 0xe5, 0x98, 0xc0},
     .flags = {0x02, 0x01, 0x06},
     .manuf = {
-        .length = 9,
+        // .length = 9,
+        // .length = 10,
+        .length = 13,
         .type = 0xff,
         .man_id1 = 0xe0,
         .man_id2 = 0x02,
         .service_id = 0x14,
         .packet_type = 0,
-        // .data = {0, 0, 0, 0, 0, 0, 0, 0}},
-        .data = {0, 0, 0, 0}},
+        .data = {0, 0, 0, 0, 0, 0, 0, 0}},
+        // .data = {0, 0, 0, 0, 0}},
+        // .data = {0, 0, 0, 0}},
     .name = {7, 0x09, 0x53, 0x48, 0x4f, 0x45, 0x53, 0x21}
 };
 
