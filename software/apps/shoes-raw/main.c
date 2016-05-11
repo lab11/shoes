@@ -81,16 +81,16 @@ static nrf_radio_request_t m_timeslot_req_earliest = {
 };
 
 // Timer for delaying packet re-transmissions
-APP_TIMER_DEF(timer_flood_retransmission);
+APP_TIMER_DEF(timer_flood_tx);
 
 // Timer for going back to idle after a flood has started
-APP_TIMER_DEF(timer_flood_end);
+APP_TIMER_DEF(timer_flood_led);
 
 // Keep track of unique flood id for this node
 static uint8_t _my_flood_counter = 0;
 
 // How many floods we are currently seeing
-static uint8_t _current_flood_count = 0;
+// static uint8_t _current_flood_count = 0;
 
 // Advertisement packet structure
 #define RX_BUF_SIZE 128
@@ -103,6 +103,7 @@ typedef struct {
     uint8_t man_id2;
     uint8_t service_id;
     uint8_t packet_type;
+    // uint8_t data[8];
     uint8_t data[4];
 } __attribute__((packed)) shoes_manuf_data_t;
 
@@ -120,6 +121,7 @@ typedef struct {
 advertisement_t advertisement = {
     .type_and_options = 0x02,  // ADV_NONCONN_IND
     // .type_and_options = 0x00,  // ADV_NONCONN_IND
+    // .length = 31,
     .length = 27,
     .s1 = 0,
     .src_addr = {0x00, 0x00, 0x00, 0xe5, 0x98, 0xc0},
@@ -131,6 +133,7 @@ advertisement_t advertisement = {
         .man_id2 = 0x02,
         .service_id = 0x14,
         .packet_type = 0,
+        // .data = {0, 0, 0, 0, 0, 0, 0, 0}},
         .data = {0, 0, 0, 0}},
     .name = {7, 0x09, 0x53, 0x48, 0x4f, 0x45, 0x53, 0x21}
 };
@@ -142,11 +145,11 @@ typedef enum {
     STATE_COLOR2
 } shoes_state_e;
 
-// Board defaults to off
-static shoes_state_e _shoes_state = STATE_OFF;
+// Board defaults to on
+static shoes_state_e _shoes_state = STATE_COLOR1;
 
 // Which color our floods will be.
-static int _my_color;
+static int _my_color = 1;
 
 // State for setting up the button
 static void button_handler (uint8_t button, uint8_t action);
@@ -159,6 +162,21 @@ APP_TIMER_DEF(timer_button_press);
 
 // After a long button press we may want to ignore the button release
 static bool _ignore_button_release = false;
+
+// We want to send duplicate packets to get better flooding
+static uint8_t _transmit_count = 0;
+
+typedef enum {
+    LED_STATE_OFF,
+    LED_STATE_ON
+} led_state_e;
+
+static led_state_e _led_state = LED_STATE_OFF;
+
+
+static uint8_t _flood_color;
+
+static uint32_t _flood_timing_start;
 
 /*******************************************************************************
  * Function signatures
@@ -325,16 +343,37 @@ static void continue_scan () {
 static void start_scan () {
     NVIC_EnableIRQ(TIMER0_IRQn);
 
-    radio_init(39); // set channel to only use 39
+    // radio_init(39); // set channel to only use 39
+    radio_init(37); // set channel to only use 39
     radio_rx_timeout_init();
 
     continue_scan();
 }
 
 
+// static uint16_t ticks_to_ms (uint32_t ticks) {
+//     return (uint16_t) ((ticks * ((0 + 1 ) * 1000)) / APP_TIMER_CLOCK_FREQ);
+// }
+
+
 static void send_advertisement () {
+    // uint32_t now;
+    // uint32_t diff;
+
+    _transmit_count++;
+
+    // Get current count so we know when this packet actually went out
+    // app_timer_cnt_get(&now);
+    // app_timer_cnt_diff_compute(now, _flood_timing_start, &diff);
+
+    // Insert the ms offset into the outgoing packet
+    // uint16_t offset = ticks_to_ms(diff);
+    // advertisement.manuf.data[3] = offset & 0xFF;
+    // advertisement.manuf.data[4] = (offset >> 8) & 0xFF;
+
     radio_disable();
-    radio_init(39);
+    // radio_init(39);
+    radio_init(37);
     radio_buffer_configure((uint8_t*) &advertisement);
     radio_tx_prepare();
 }
@@ -470,22 +509,27 @@ static void led_iterate () {
     if (state & 0x8) led_off(LED3); else led_on(LED3);
 }
 
-static void flood_leds (uint8_t flood_count) {
-    if (flood_count == 1) {
+static void leds_flood (uint8_t color) {
+    if (color == 1) {
         led_off(LED2);
         led_off(LED4);
         led_on(LED1);
         led_on(LED3);
-    } else if (flood_count == 2) {
+    } else if (color == 2) {
         led_off(LED1);
         led_off(LED3);
         led_on(LED2);
         led_on(LED4);
-    } else if (flood_count == 3) {
+    } else if (color == 3) {
         led_off(LED1);
         led_off(LED3);
         led_off(LED2);
         led_off(LED4);
+    } else {
+        led_off(LED1);
+        led_off(LED4);
+        led_on(LED2);
+        led_on(LED3);
     }
 }
 
@@ -493,52 +537,77 @@ static void flood_leds (uint8_t flood_count) {
 static uint32_t rssi_to_ticks (int8_t rssi) {
     if (rssi <= -80) return APP_TIMER_TICKS(5, 0); // 5 ms
     if (rssi >= 0) return APP_TIMER_TICKS(100, 0); // 100 ms
-    return APP_TIMER_TICKS(((99*((int16_t)rssi)) / 80) + 100, 0);
+    // return APP_TIMER_TICKS(((99*((int16_t)rssi)) / 80) + 100, 0);
+    return APP_TIMER_TICKS(((99*((int16_t)rssi)) / 80) + 300, 0);
 }
 
 static void start_flood () {
     // Check how many floods we are a part of.
     // If we are already at the limit, we can't start another
-    if (_current_flood_count < 3) {
+    // if (_current_flood_count < 3) {
 
         // Mark that we are part of a new flood
-        _current_flood_count++;
+        // _current_flood_count++;
 
-        // Set our LED to start the flood
-        flood_leds(_current_flood_count);
+        // Since we started this flood, the flood color is our color
+        _flood_color = _my_color;
 
-        // Set a timer to turn off the LEDs after the flood is over
-        app_timer_stop(timer_flood_end);
-        app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
+        // Start a timer so we have a running clock we can use
+        // app_timer_start(timer_timing, 65535, NULL);
+        // app_timer_cnt_get(&_flood_timing_start);
+
+        // We don't set our LEDs for 300 ms
+        app_timer_stop(timer_flood_led);
+        app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
+
+        // Get the current time
+        app_timer_cnt_get(&_flood_timing_start);
+
+        // // Set our LED to start the flood
+        leds_flood(_my_color);
+
+        // // Set a timer to turn off the LEDs after the flood is over
+        // app_timer_stop(timer_flood_end);
+        // app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
         advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
         _my_flood_counter++;
         advertisement.manuf.data[0] = _my_flood_counter;
+        // Keep track of which hop this is
+        // advertisement.manuf.data[1] = 0;
+        // // Also transmit which color we are
+        // advertisement.manuf.data[2] = _my_color;
         // Also include that we are the ones who started it
         advertisement.manuf.data[1] = advertisement.src_addr[2];
         advertisement.manuf.data[2] = advertisement.src_addr[1];
         advertisement.manuf.data[3] = advertisement.src_addr[0];
+        // advertisement.manuf.data[5] = advertisement.src_addr[2];
+        // advertisement.manuf.data[6] = advertisement.src_addr[1];
+        // advertisement.manuf.data[7] = advertisement.src_addr[0];
 
         // Now spread the flood
-        send_advertisement();
-    }
+        _transmit_count = 0;
+        app_timer_stop(timer_flood_tx);
+        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
+        // send_advertisement();
+    // }
 }
 
 static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
     // Check how many floods we are a part of.
     // If we are already at the limit, we can't start another
-    if (_current_flood_count < 3) {
+    // if (_current_flood_count < 3) {
 
         // Mark that we are part of a new flood
-        _current_flood_count++;
+        // _current_flood_count++;
 
         // Set our LED to start the flood
-        flood_leds(_current_flood_count);
+        // flood_leds(_current_flood_count);
 
         // Set a timer to turn off the LEDs after the flood is over
-        app_timer_stop(timer_flood_end);
-        app_timer_start(timer_flood_end, FLOOD_DURATION, NULL);
+        app_timer_stop(timer_flood_led);
+        app_timer_start(timer_flood_led, FLOOD_DURATION, NULL);
 
         // Mark this as a flood
         advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
@@ -551,8 +620,8 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
 
         // Now spread the flood based on RSSI. Lower RSSI means quicker
         // retransmit time.
-        app_timer_start(timer_flood_retransmission, rssi_to_ticks(rssi), NULL);
-    }
+        app_timer_start(timer_flood_tx, rssi_to_ticks(rssi), NULL);
+    // }
 }
 
 
@@ -562,8 +631,9 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id) {
 
 
 void rx_callback (bool crc_valid) {
+    return;
     if (crc_valid) {
-        led_toggle(LED0);
+        // led_toggle(LED0);
 
         int8_t rssi = -1 * (int8_t) radio_rssi_get();
 
@@ -637,7 +707,7 @@ void rx_callback (bool crc_valid) {
                     // This looks like a DFU reset packet.
                     // Now determine if this was targeted at us.
                     if (memcmp(m_rx_buf+i+5, (uint8_t*) BLEADDR_FLASH_LOCATION, 6) == 0) {
-
+                        led_on(LED0);
 
                         // It was!
                         pending_dfu = true;
@@ -651,9 +721,15 @@ void rx_callback (bool crc_valid) {
 }
 
 // This is called after a packet is transmitted. We want to
-// go right back to listening.
+// to retransmit to ensure coverage then go back to scanning
 void tx_callback () {
+    if (_transmit_count < 3) {
+        // send_advertisement();
+        // Might want to randomize this
+        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(15, 0), NULL);
+    }// else {
     start_scan();
+    //}
 }
 
 // Called as a part of the timeslot API from the softdevice.
@@ -662,7 +738,7 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
     // If we want to go to the bootloader or we want to turn
     // off we hit this state.
     if (pending_dfu || _shoes_state == STATE_OFF) {
-        uint32_t err_code;
+        // uint32_t err_code;
 
         // When we want to go to DFU mode, we just give up our timeslot
         m_signal_callback_return_param.callback_action = NRF_RADIO_SIGNAL_CALLBACK_ACTION_END;
@@ -706,20 +782,40 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 
 // This timer callback occurs when we should transmit a packet to
 // keep propagating a flood a different node started.
-static void timer_flood_retransmission_callback (void* context) {
+static void timer_flood_tx_callback (void* context) {
+    led_toggle(LED0);
     send_advertisement();
 }
 
 // This timer callback happens to effectively end a flood
 // at this node by turning off all LEDs
-static void timer_flood_end_callback (void* context) {
+static void timer_flood_led_callback (void* context) {
+    // switch (_led_state) {
+    //     case LED_STATE_OFF:
+    //         _led_state = LED_STATE_ON;
+
+    //         // Turn LEDs on
+    //         leds_flood(_flood_color);
+
+    //         // Reset this timer to turn LEDs off
+    //         app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
+    //         break;
+
+    //     case LED_STATE_ON:
+    //         _led_state = LED_STATE_OFF;
+    //         leds_off();
+    //         break;
+    // }
+
+
     // Turn off all LEDs if flood has ended
     leds_off();
 
     // Reset our flood state
-    _current_flood_count = 0;
+    // _current_flood_count = 0;
 }
 
+// Called on long press of the button. Used to turn device off
 static void timer_button_press_callback (void* context) {
     // We don't care when the button is unpressed now
     _ignore_button_release = true;
@@ -731,19 +827,28 @@ static void timer_button_press_callback (void* context) {
     ui_off();
 }
 
-// Interrupt handler for button and accelerometer
+// static void timer_flood_tx_callback (void* context) {
+//     // Send the advertisement
+//     send_advertisement();
+// }
+
+// static void timer_flood_LEDs ()
+
+// Interrupt handler accelerometer
 static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
-    led_toggle(LED0);
+
     if (pins_h2l & (1 << ACCELEROMETER_INTERRUPT_PIN)) {
         // High to low transition
-
+// led_toggle(LED0);
         // Only do a flood if we are not off
         if (_shoes_state != STATE_OFF) {
+
             start_flood();
         }
     }
 }
 
+// Called when the button is pushed or released
 static void button_handler (uint8_t button, uint8_t action) {
     switch(action) {
         case APP_BUTTON_PUSH:
@@ -918,7 +1023,7 @@ static void accelerometer_init () {
  ******************************************************************************/
 
 int main () {
-    uint32_t err_code;
+    // uint32_t err_code;
 
     // Initialize.
     led_init(LED0);
@@ -945,8 +1050,8 @@ int main () {
                    4, // op queue size
                    false);
     // Create the one-shot timers
-    app_timer_create(&timer_flood_retransmission, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_retransmission_callback);
-    app_timer_create(&timer_flood_end, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_end_callback);
+    app_timer_create(&timer_flood_tx, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_tx_callback);
+    app_timer_create(&timer_flood_led, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_led_callback);
 
     // Use nordics button api
     app_button_init(buttons, 1, BUTTON_DETECTION_DELAY);
@@ -956,6 +1061,10 @@ int main () {
 
     // Need to setup our accelerometer
     accelerometer_init();
+
+    // Init to on
+    sd_radio_session_open(radio_cb);
+    sd_radio_request(&m_timeslot_req_earliest);
 
     // Enter main loop and essentially wait for button press
     while (1) {
