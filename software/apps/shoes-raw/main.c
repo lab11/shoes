@@ -10,6 +10,7 @@
 #include "app_button.h"
 #include "app_util.h"
 #include "nrf_drv_spi.h"
+#include "nrf_drv_rng.h"
 #include "app_gpiote.h"
 #include "nrf_delay.h"
 
@@ -281,6 +282,27 @@ static void power_manage (void) {
     APP_ERROR_CHECK(err_code);
 }
 
+void dfu_reset_prepare (void) {
+
+    // Disable the interrupts!
+    app_gpiote_user_disable(gpiote_user_acc);
+    // app_gpiote_user_disable(gpiote_user_light);
+
+    // reset accelerometer
+    // spi_enable();
+    adxl362_accelerometer_reset();
+    // spi_disable();
+
+    // disable pressure
+    // lps331ap_power_off();
+
+    // // disable lux
+    // tsl2561_off();
+
+    // // disable i2c
+    // nrf_drv_twi_disable(&twi_instance);
+}
+
 void timeslot_sys_event_handler (uint32_t evt) {
     uint32_t err_code;
 
@@ -296,6 +318,8 @@ void timeslot_sys_event_handler (uint32_t evt) {
 
             // If we get to session closed, we may want to enter the bootloader
             if (pending_dfu) {
+                dfu_reset_prepare();
+
                 // These steps from dfu_app_handler.c
                 err_code = sd_power_gpregret_set(BOOTLOADER_DFU_START);
                 APP_ERROR_CHECK(err_code);
@@ -765,7 +789,21 @@ void tx_callback () {
     if (_transmit_count < 3) {
         // send_advertisement();
         // Might want to randomize this
-        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(15, 0), NULL);
+
+        uint8_t available;
+        uint8_t random = 15;
+
+        nrf_drv_rng_bytes_available(&available);
+        if (available >= 1) {
+            nrf_drv_rng_rand(&random, 1);
+
+            random = (random & 0x3f); // cap at 63
+            if (random < 15) {
+                random = 15;
+            }
+        }
+
+        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(random, 0), NULL);
     }// else {
     start_scan();
     //}
@@ -822,7 +860,7 @@ nrf_radio_signal_callback_return_param_t* radio_cb (uint8_t sig) {
 // This timer callback occurs when we should transmit a packet to
 // keep propagating a flood a different node started.
 static void timer_flood_tx_callback (void* context) {
-    led_toggle(LED0);
+    // led_toggle(LED0);
     send_advertisement();
 }
 
@@ -1016,9 +1054,17 @@ static void accelerometer_init () {
         led_on(LED0);
     }
 
+    // Enable the interrupt!
+    err = app_gpiote_user_enable(gpiote_user_acc);
+    if (err != NRF_SUCCESS) {
+        led_on(LED0);
+    }
+
 
     // Configure the accel hardware
     adxl362_accelerometer_init(&_spi, adxl362_NOISE_NORMAL, false, false, false);
+
+    // adxl362_accelerometer_reset();
 
     uint16_t act_thresh = 0x222;
     // uint16_t act_thresh = 0x0020;
@@ -1058,12 +1104,10 @@ static void accelerometer_init () {
 
 
 
-    // Enable the interrupt!
-    err = app_gpiote_user_enable(gpiote_user_acc);
-    if (err != NRF_SUCCESS) {
-        led_on(LED0);
-    }
+
 }
+
+
 
 
 /******************************************************************************/
@@ -1109,6 +1153,9 @@ int main () {
 
     // Need to setup our accelerometer
     accelerometer_init();
+
+    // Want random ish numbers to delay packet transmission
+    nrf_drv_rng_init(NULL);
 
     // Init to on
     sd_radio_session_open(radio_cb);

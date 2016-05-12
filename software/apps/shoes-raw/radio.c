@@ -79,7 +79,7 @@ void radio_init (uint8_t channel)
   NRF_RADIO->POWER = 1;
 
   /* Set radio transmit power to 0dBm */
-  NRF_RADIO->TXPOWER = (RADIO_TXPOWER_TXPOWER_0dBm << RADIO_TXPOWER_TXPOWER_Pos);
+  NRF_RADIO->TXPOWER = (RADIO_TXPOWER_TXPOWER_Pos4dBm << RADIO_TXPOWER_TXPOWER_Pos);
 
   /* Set radio mode to 1Mbit/s Bluetooth Low Energy */
   NRF_RADIO->MODE = (RADIO_MODE_MODE_Ble_1Mbit << RADIO_MODE_MODE_Pos);

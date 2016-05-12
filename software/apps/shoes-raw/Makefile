@@ -8,6 +8,7 @@ APPLICATION_SRCS += app_timer.c
 APPLICATION_SRCS += app_button.c
 APPLICATION_SRCS += app_error.c
 APPLICATION_SRCS += app_gpiote.c
+APPLICATION_SRCS += app_fifo.c
 # APPLICATION_SRCS += ble_srv_common.c
 # APPLICATION_SRCS += ble_conn_state.c
 # APPLICATION_SRCS += sdk_mapped_flags.c
@@ -18,6 +19,7 @@ APPLICATION_SRCS += led.c
 
 APPLICATION_SRCS += nrf_drv_spi.c
 APPLICATION_SRCS += nrf_drv_gpiote.c
+APPLICATION_SRCS += nrf_drv_rng.c
 
 APPLICATION_SRCS += adxl362.c
 
