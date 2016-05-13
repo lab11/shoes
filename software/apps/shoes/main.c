@@ -36,8 +36,9 @@
 #define TIMESLOT_DISTANCE_US 100000
 #define TIMESLOT_TIMEOUT_US 200000
 
-// How long each node stays with its LED on
-#define LIGHT_TIME_MS 300
+// How long the light should stay on for the flood
+#define FLOOD_LED_TIME_MS 5000
+#define FLOOD_TIMESLOT_MS 300
 
 // Something for button API
 #define BUTTON_DETECTION_DELAY   APP_TIMER_TICKS(50, 0)
@@ -45,8 +46,8 @@
 // How long a long press is defined to be, in ms
 #define BUTTON_LONG_PRESS_LENGTH APP_TIMER_TICKS(1500, 0)
 
-// How long before we have not seen a flood recently
-#define FLOOD_RECENT_TIME APP_TIMER_TICKS(1000, 0)
+// // How long before we have not seen a flood recently
+// #define FLOOD_RECENT_TIME APP_TIMER_TICKS(1000, 0)
 
 // Types of packets in the Shoes! protocol
 #define SHOES_PKT_TYPE_FLOOD 0x01  // Start or continue a flood
@@ -95,7 +96,7 @@ APP_TIMER_DEF(timer_flood_led);
 
 // Timer that lets us monitor how long its been since we joined a flood.
 // We use this for activating the third color when two floods intersect.
-APP_TIMER_DEF(timer_flood_recent);
+// APP_TIMER_DEF(timer_flood_recent);
 
 // Keep track of unique flood id for this node
 static uint8_t _my_flood_counter = 0;
@@ -198,6 +199,9 @@ static uint32_t _flood_timing_start;
 // Whether we have seen a flood recently.
 static bool _in_flood = false;
 
+// How long to wait before turning off LED
+static uint32_t _flood_off_time_ticks = 0;
+
 /*******************************************************************************
  * Function signatures
  ******************************************************************************/
@@ -248,26 +252,6 @@ bool pending_dfu = false;
 /*******************************************************************************
  * System functions
  ******************************************************************************/
-
-/**@brief Function for putting the chip into sleep mode.
- *
- * @note This function will not return.
- */
-// static void sleep_mode_enter(void)
-// {
-//     uint32_t err_code = bsp_indication_set(BSP_INDICATE_IDLE);
-//     APP_ERROR_CHECK(err_code);
-
-//     // Prepare wakeup buttons.
-//     err_code = bsp_btn_ble_sleep_mode_prepare();
-//     APP_ERROR_CHECK(err_code);
-
-//     // Go to system-off mode (this function will not return; wakeup will cause a reset).
-//     err_code = sd_power_system_off();
-//     APP_ERROR_CHECK(err_code);
-// }
-
-
 
 static void on_ble_evt(ble_evt_t * p_ble_evt) {
     switch (p_ble_evt->header.evt_id) {
@@ -530,6 +514,7 @@ static void leds_flood (uint8_t _flood_color) {
     else if (_flood_color == 2) leds_color2();
     else if (_flood_color == 3) leds_both();
 }
+
 static void start_flood () {
 
     // Since we started this flood, the flood color is our color
@@ -551,9 +536,13 @@ static void start_flood () {
     // Mark that we are in a flood
     _in_flood = true;
 
-    // Set a timer to timeout the _in_flood variable
-    app_timer_stop(timer_flood_recent);
-    app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
+    // // Set a timer to timeout the _in_flood variable
+    // app_timer_stop(timer_flood_recent);
+    // app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
+
+    // Decide when to turn our LED off.
+    // Since we started the flood, we wait the full time
+    _flood_off_time_ticks = APP_TIMER_TICKS(FLOOD_LED_TIME_MS, 0);
 
     // We set our LED immediately when we start a flood, but we still
     // want a timer so we can put this logic in the same place
@@ -574,13 +563,16 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
     // Mark that we are in a flood
     _in_flood = true;
 
-    // Set a timer to timeout the _in_flood variable
-    app_timer_stop(timer_flood_recent);
-    app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
+    // // Set a timer to timeout the _in_flood variable
+    // app_timer_stop(timer_flood_recent);
+    // app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
 
-    // We don't set our LEDs for LIGHT_TIME_MS ms from when this flood round started
+    // Calculate when to turn off our LED
+    _flood_off_time_ticks = APP_TIMER_TICKS(FLOOD_LED_TIME_MS-(((hop_count+1)%15) * FLOOD_TIMESLOT_MS), 0);
+
+    // We don't set our LEDs for FLOOD_TIMESLOT_MS ms from when this flood round started
     app_timer_stop(timer_flood_led);
-    app_timer_start(timer_flood_led, APP_TIMER_TICKS(LIGHT_TIME_MS-delay, 0), NULL);
+    app_timer_start(timer_flood_led, APP_TIMER_TICKS(FLOOD_TIMESLOT_MS-delay, 0), NULL);
 
     // Mark this as a flood
     advertisement.manuf.packet_type = SHOES_PKT_TYPE_FLOOD;
@@ -594,6 +586,20 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
     advertisement.manuf.data[5] = (initiator_id >> 16) & 0xFF;
     advertisement.manuf.data[6] = (initiator_id >> 8)  & 0xFF;
     advertisement.manuf.data[7] = (initiator_id >> 0)  & 0xFF;
+}
+
+// Send a flood packet some time in the future
+static void send_flood_message () {
+    uint8_t random = 5;
+    random = NRF_RNG->VALUE;
+
+    random = (random & 0x1f); // cap at 31
+    if (random < 5) {
+        random = 5;
+    }
+
+    app_timer_stop(timer_flood_tx);
+    app_timer_start(timer_flood_tx, APP_TIMER_TICKS(random, 0), NULL);
 }
 
 
@@ -699,15 +705,7 @@ void rx_callback (bool crc_valid) {
 // to retransmit to ensure coverage then go back to scanning
 void tx_callback () {
     if (_transmit_count < NUMBER_OF_FLOOD_TRANSMISSIONS) {
-        uint8_t random = 5;
-        random = NRF_RNG->VALUE;
-
-        random = (random & 0x1f); // cap at 31
-        if (random < 5) {
-            random = 5;
-        }
-
-        app_timer_start(timer_flood_tx, APP_TIMER_TICKS(random, 0), NULL);
+        send_flood_message();
     }
 
     // Need to call this to keep our timeslices from the radio happy
@@ -779,20 +777,20 @@ static void timer_flood_led_callback (void* context) {
             leds_flood(_flood_color);
 
             // Reset this timer to turn LEDs off
-            app_timer_start(timer_flood_led, APP_TIMER_TICKS(300, 0), NULL);
+            app_timer_start(timer_flood_led, _flood_off_time_ticks, NULL);
 
             // Get the current time
             app_timer_cnt_get(&_flood_timing_start);
 
             // Now spread the flood
             _transmit_count = 0;
-            app_timer_stop(timer_flood_tx);
-            app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
+            send_flood_message();
 
             break;
 
         case LED_STATE_ON:
             _led_state = LED_STATE_OFF;
+            _in_flood = false;
             leds_off();
             break;
     }
@@ -811,10 +809,10 @@ static void timer_button_press_callback (void* context) {
 }
 
 
-static void timer_flood_recent_callback (void* context) {
-    // No longer in a flood
-    _in_flood = false;
-}
+// static void timer_flood_recent_callback (void* context) {
+//     // No longer in a flood
+//     _in_flood = false;
+// }
 
 // Interrupt handler accelerometer
 static void interrupt_handler (uint32_t pins_l2h, uint32_t pins_h2l) {
@@ -1036,7 +1034,7 @@ int main () {
     // Create the one-shot timers
     app_timer_create(&timer_flood_tx, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_tx_callback);
     app_timer_create(&timer_flood_led, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_led_callback);
-    app_timer_create(&timer_flood_recent, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_recent_callback);
+    // app_timer_create(&timer_flood_recent, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_recent_callback);
 
     // Use nordics button api
     app_button_init(buttons, 1, BUTTON_DETECTION_DELAY);
