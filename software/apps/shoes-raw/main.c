@@ -384,11 +384,11 @@ static void start_scan () {
 
     // radio_init(39); // set channel to only use 39
 
-    if (_my_color == 1) {
-        radio_init(25);
-    } else {
+    // if (_my_color == 1) {
+    //     radio_init(25);
+    // } else {
         radio_init(37); // set channel to only use 37
-    }
+    // }
     radio_rx_timeout_init();
 
     continue_scan();
@@ -422,11 +422,11 @@ static void send_advertisement () {
     radio_disable();
     // radio_init(39);
     // radio_init(37);
-    if (_my_color == 1) {
-        radio_init(25);
-    } else {
+    // if (_my_color == 1) {
+    //     radio_init(25);
+    // } else {
         radio_init(37); // set channel to only use 37
-    }
+    // }
     radio_buffer_configure((uint8_t*) &advertisement);
     radio_tx_prepare();
 }
@@ -735,7 +735,7 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
 void rx_callback (bool crc_valid) {
     // return;
     if (crc_valid) {
-        led_toggle(LED0);
+        // led_toggle(LED0);
 
         int8_t rssi = -1 * (int8_t) radio_rssi_get();
 
@@ -1201,7 +1201,7 @@ int main () {
     ble_stack_init();
 
     // Call this to get magically lower power
-    sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+    // sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
 
     // Copy BLE address into our outgoing advertisement struct
     memcpy(advertisement.src_addr, (uint8_t*) BLEADDR_FLASH_LOCATION, 6);
