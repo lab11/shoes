@@ -44,6 +44,9 @@
 // How long a long press is defined to be, in ms
 #define BUTTON_LONG_PRESS_LENGTH APP_TIMER_TICKS(1500, 0)
 
+// How long before we have not seen a flood recently
+#define FLOOD_RECENT_TIME APP_TIMER_TICKS(1000, 0)
+
 // Types of packets in the Shoes! protocol
 #define SHOES_PKT_TYPE_FLOOD 0x01  // Start or continue a flood
 
@@ -86,6 +89,10 @@ APP_TIMER_DEF(timer_flood_tx);
 
 // Timer for going back to idle after a flood has started
 APP_TIMER_DEF(timer_flood_led);
+
+// Timer that lets us monitor how long its been since we joined a flood.
+// We use this for activating the third color when two floods intersect.
+APP_TIMER_DEF(timer_flood_recent);
 
 // Keep track of unique flood id for this node
 static uint8_t _my_flood_counter = 0;
@@ -184,6 +191,8 @@ static uint8_t _flood_color;
 
 static uint32_t _flood_timing_start;
 
+static bool _in_flood = false;
+
 /*******************************************************************************
  * Function signatures
  ******************************************************************************/
@@ -200,6 +209,7 @@ void ble_error (uint32_t error_code) {
 }
 
 void assert_nrf_callback (uint16_t line_num, const uint8_t * p_file_name) {
+    led_on(LED0);
     app_error_handler(0x5599, line_num, p_file_name);
 }
 
@@ -373,7 +383,12 @@ static void start_scan () {
     NVIC_EnableIRQ(TIMER0_IRQn);
 
     // radio_init(39); // set channel to only use 39
-    radio_init(37); // set channel to only use 39
+
+    if (_my_color == 1) {
+        radio_init(25);
+    } else {
+        radio_init(37); // set channel to only use 37
+    }
     radio_rx_timeout_init();
 
     continue_scan();
@@ -406,7 +421,12 @@ static void send_advertisement () {
 
     radio_disable();
     // radio_init(39);
-    radio_init(37);
+    // radio_init(37);
+    if (_my_color == 1) {
+        radio_init(25);
+    } else {
+        radio_init(37); // set channel to only use 37
+    }
     radio_buffer_configure((uint8_t*) &advertisement);
     radio_tx_prepare();
 }
@@ -620,7 +640,17 @@ static void start_flood () {
         // app_timer_start(timer_flood_tx, APP_TIMER_TICKS(10, 0), NULL);
         // send_advertisement();
 
-        // We don't set our LEDs for 300 ms
+        // Mark that we are in a flood
+        _in_flood = true;
+
+        // Set a timer to timeout the _in_flood variable
+        app_timer_stop(timer_flood_recent);
+        app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
+
+
+        // We set our LED immediately when we start a flood, but we still
+        // want a timer so we can put this logic in the same place
+        // for all nodes.
         app_timer_stop(timer_flood_led);
         app_timer_start(timer_flood_led, APP_TIMER_TICKS(2, 0), NULL);
 
@@ -640,7 +670,19 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
         // Set our LED to start the flood
         // flood_leds(_current_flood_count);
 
+        // If we are already using third color, use that
         _flood_color = color;
+        // If we have seen a flood recently, also use third color
+        if (_in_flood) {
+            _flood_color = 3;
+        }
+
+        // Mark that we are in a flood
+        _in_flood = true;
+
+        // Set a timer to timeout the _in_flood variable
+        app_timer_stop(timer_flood_recent);
+        app_timer_start(timer_flood_recent, FLOOD_RECENT_TIME, NULL);
 
         // We don't set our LEDs for 300 ms
         app_timer_stop(timer_flood_led);
@@ -693,7 +735,7 @@ static void join_flood (int8_t rssi, uint32_t initiator_id, uint8_t flood_id, ui
 void rx_callback (bool crc_valid) {
     // return;
     if (crc_valid) {
-        // led_toggle(LED0);
+        led_toggle(LED0);
 
         int8_t rssi = -1 * (int8_t) radio_rssi_get();
 
@@ -786,22 +828,32 @@ void rx_callback (bool crc_valid) {
 // This is called after a packet is transmitted. We want to
 // to retransmit to ensure coverage then go back to scanning
 void tx_callback () {
-    if (_transmit_count < 3) {
+    uint32_t err_code;
+    if (_transmit_count < 8) {
         // send_advertisement();
         // Might want to randomize this
 
         uint8_t available;
-        uint8_t random = 15;
+        uint8_t random = 5;
+// led_on(LED0);
+        // while (1) {
+            // err_code = nrf_drv_rng_bytes_available(&available);
+            // err_code = nrf_drv_rng_pool_capacity(&available);
+        random = NRF_RNG->VALUE;
+        // //     if (available > 0) break;
+        // //     led_toggle(LED0);
+        // // }
+        // // if (err_code != NRF_SUCCESS)
+        //     // led_on(LED0);
+        // if (available >= 1) {
+        //     led_on(LED0);
+        //     nrf_drv_rng_rand(&random, 1);
 
-        nrf_drv_rng_bytes_available(&available);
-        if (available >= 1) {
-            nrf_drv_rng_rand(&random, 1);
-
-            random = (random & 0x3f); // cap at 63
-            if (random < 15) {
-                random = 15;
+            random = (random & 0x1f); // cap at 31
+            if (random < 5) {
+                random = 5;
             }
-        }
+        // }
 
         app_timer_start(timer_flood_tx, APP_TIMER_TICKS(random, 0), NULL);
     }// else {
@@ -911,6 +963,12 @@ static void timer_button_press_callback (void* context) {
 
     // Display "off" pattern
     ui_off();
+}
+
+
+static void timer_flood_recent_callback (void* context) {
+    // No longer in a flood
+    _in_flood = false;
 }
 
 // static void timer_flood_tx_callback (void* context) {
@@ -1066,17 +1124,28 @@ static void accelerometer_init () {
 
     // adxl362_accelerometer_reset();
 
-    uint16_t act_thresh = 0x222;
-    // uint16_t act_thresh = 0x0020;
-    adxl362_set_activity_threshold(act_thresh);
+    // desktop (manual flicks)
+    // uint16_t act_thresh = 0x222;
+    // uint16_t inact_thresh = 0x00c6;
+    // uint8_t a_time = 1;
+    // uint8_t ia_time = 30;
+
+    // shoe stomp
+    uint16_t act_thresh = 0x200;
     uint16_t inact_thresh = 0x00c6;
+    // uint16_t act_thresh = 0x0020;
+    uint8_t a_time = 2;
+    uint8_t ia_time = 8;
+    adxl362_set_activity_threshold(act_thresh);
+
     adxl362_set_inactivity_threshold(inact_thresh);
 
     // uint8_t a_time = 4;
-    uint8_t a_time = 1;
+
     adxl362_set_activity_time(a_time);
-    uint8_t ia_time = 30;
     adxl362_set_inactivity_time(ia_time);
+
+    adxl362_config_measurement_range(adxl362_MEAS_RANGE_8G);
 
     adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, true , true);
     // adxl362_config_interrupt_mode(adxl362_INTERRUPT_LOOP, false , false);
@@ -1144,6 +1213,7 @@ int main () {
     // Create the one-shot timers
     app_timer_create(&timer_flood_tx, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_tx_callback);
     app_timer_create(&timer_flood_led, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_led_callback);
+    app_timer_create(&timer_flood_recent, APP_TIMER_MODE_SINGLE_SHOT, timer_flood_recent_callback);
 
     // Use nordics button api
     app_button_init(buttons, 1, BUTTON_DETECTION_DELAY);
@@ -1155,7 +1225,10 @@ int main () {
     accelerometer_init();
 
     // Want random ish numbers to delay packet transmission
-    nrf_drv_rng_init(NULL);
+    uint32_t err_code = nrf_drv_rng_init(NULL);
+    if (err_code !=NRF_SUCCESS) {
+        led_on(LED0);
+    }
 
     // Init to on
     sd_radio_session_open(radio_cb);
